@@ -11,6 +11,7 @@
     "icons": "tauri icon assets/app-icon.svg",
     "desktop": "npm run icons && tauri dev",
     "desktop:build": "npm run icons && tauri build",
+    "postdesktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/copy-builds-to-onedrive.ps1",
     "test": "vitest run"
   },
   "dependencies": {
