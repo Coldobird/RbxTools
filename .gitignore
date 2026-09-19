@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+.DS_Store
+artifacts/test-results/
+src-tauri/icons/
+release/
+checks/*.exe
+checks/*.pdb

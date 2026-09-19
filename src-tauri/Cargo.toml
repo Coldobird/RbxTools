@@ -1,0 +1,36 @@
+[package]
+name = "rbx-tools"
+version = "0.2.0"
+description = "A pocket-sized collection of game utilities"
+authors = ["RBX Tools"]
+edition = "2021"
+
+[lib]
+name = "rbx_tools_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "rbx-tools"
+path = "src/main.rs"
+# The Windows manifest deliberately requires elevation, so a test harness for
+# this launcher cannot run in a normal non-elevated test session.
+test = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Security", "Win32_System_Rpc", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_System_Environment", "Win32_System_LibraryLoader"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
