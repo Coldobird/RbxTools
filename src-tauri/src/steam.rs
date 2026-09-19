@@ -6,30 +6,33 @@ use std::{
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE},
-    Security::{
-        GetTokenInformation, TokenElevation, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
-        TOKEN_ELEVATION, TOKEN_QUERY,
-    },
+    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+    Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
             TH32CS_SNAPPROCESS,
         },
-        Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock},
         Registry::{
             RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
             RRF_SUBKEY_WOW6432KEY,
         },
         Threading::{
-            CreateProcessWithTokenW, GetCurrentProcess, OpenProcess, OpenProcessToken,
-            QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
-            CREATE_UNICODE_ENVIRONMENT, LOGON_WITH_PROFILE, PROCESS_INFORMATION,
-            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, STARTUPINFOW,
+            GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+            TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+            PROCESS_TERMINATE,
         },
     },
-    UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId},
 };
+
+#[link(name = "exec_in_explorer", kind = "static")]
+unsafe extern "C" {
+    fn rbx_shell_execute_unelevated(
+        file: *const u16,
+        arguments: *const u16,
+        directory: *const u16,
+    ) -> i32;
+}
 
 fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
     text.as_ref().encode_wide().chain(Some(0)).collect()
@@ -236,94 +239,37 @@ unsafe fn token_is_elevated(token: HANDLE) -> Result<bool, String> {
     Ok(elevation.TokenIsElevated != 0)
 }
 
-/// Borrow Explorer's normal primary token so Steam never inherits our admin
-/// rights. Duplicating this already-primary token can strip launch rights and
-/// cause CreateProcessWithTokenW to return access denied.
-fn desktop_token() -> Result<Handle, String> {
-    unsafe {
-        let shell = GetShellWindow();
-        if shell.is_null() {
-            return Err(
-                "Windows desktop shell is unavailable. Open Explorer and try again.".into(),
-            );
-        }
-        let mut pid = 0;
-        GetWindowThreadProcessId(shell, &mut pid);
-        let process = Handle(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid));
-        if process.0.is_null() {
-            return Err(last_error("Could not access the desktop session"));
-        }
-        let mut raw = ptr::null_mut();
-        if OpenProcessToken(
-            process.0,
-            TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
-            &mut raw,
-        ) == 0
-        {
-            return Err(last_error("Could not access the desktop user token"));
-        }
-        let token = Handle(raw);
-        if token_is_elevated(token.0)? {
-            return Err("The desktop shell is elevated. Steam must be launched from a normal Windows desktop session.".into());
-        }
-        Ok(token)
+fn launch(path: &Path, arguments: &[&str]) -> Result<(), String> {
+    let file = wide(path.as_os_str());
+    let argument_text = arguments
+        .iter()
+        .map(|argument| argument.replace('"', ""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let argument_value = wide(argument_text);
+    let directory = wide(
+        path.parent()
+            .ok_or("Steam folder is unavailable")?
+            .as_os_str(),
+    );
+    let result = unsafe {
+        rbx_shell_execute_unelevated(file.as_ptr(), argument_value.as_ptr(), directory.as_ptr())
+    };
+    if result < 0 {
+        return Err(format!(
+            "Could not ask Windows Explorer to launch Steam (HRESULT 0x{:08X}).",
+            result as u32
+        ));
     }
-}
-
-fn launch(path: &Path, arguments: &[&str], token: &Handle) -> Result<(), String> {
-    unsafe {
-        let exe = wide(path.as_os_str());
-        let suffix = arguments
-            .iter()
-            .map(|argument| format!(" \"{}\"", argument.replace('"', "")))
-            .collect::<String>();
-        let mut command = wide(format!("\"{}\"{suffix}", path.display()));
-        let directory = wide(
-            path.parent()
-                .ok_or("Steam folder is unavailable")?
-                .as_os_str(),
-        );
-        let mut info: PROCESS_INFORMATION = std::mem::zeroed();
-        let mut startup: STARTUPINFOW = std::mem::zeroed();
-        startup.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
-        let mut desktop = wide("winsta0\\default");
-        startup.lpDesktop = desktop.as_mut_ptr();
-        let mut environment = ptr::null_mut();
-        if CreateEnvironmentBlock(&mut environment, token.0, 0) == 0 {
-            return Err(last_error("Could not prepare Steam environment"));
-        }
-        let result = CreateProcessWithTokenW(
-            token.0,
-            LOGON_WITH_PROFILE,
-            exe.as_ptr(),
-            command.as_mut_ptr(),
-            CREATE_UNICODE_ENVIRONMENT,
-            environment,
-            directory.as_ptr(),
-            &startup,
-            &mut info,
-        );
-        let error = GetLastError();
-        DestroyEnvironmentBlock(environment);
-        if result == 0 {
-            return Err(format!(
-                "Could not launch Steam as the desktop user: {}",
-                std::io::Error::from_raw_os_error(error as i32)
-            ));
-        }
-        let _process = Handle(info.hProcess);
-        let _thread = Handle(info.hThread);
-        Ok(())
-    }
+    Ok(())
 }
 
 pub fn restart(path: &Path, force: bool) -> Result<String, String> {
     let path = validate_path(path)?;
-    let token = desktop_token()?; // Validate launch capability before stopping Steam.
     let was_running = !matching_processes(&path)?.is_empty();
     if was_running {
         if !force {
-            launch(&path, &["-shutdown"], &token)?;
+            launch(&path, &["-shutdown"])?;
             let deadline = Instant::now() + Duration::from_secs(8);
             while !matching_processes(&path)?.is_empty() && Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(250));
@@ -360,7 +306,7 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
             }
         }
     }
-    launch(&path, &[], &token)?;
+    launch(&path, &[])?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if !matching_processes(&path)?.is_empty() {
@@ -384,8 +330,7 @@ pub fn request_reconnect(path: &Path) -> Result<(), String> {
     if matching_processes(&path)?.is_empty() {
         return Ok(());
     }
-    let token = desktop_token()?;
-    launch(&path, &["-silent"], &token)
+    launch(&path, &["-silent"])
 }
 
 #[cfg(test)]

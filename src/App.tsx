@@ -302,7 +302,7 @@ export default function App() {
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
-            <span>v0.2.0</span>
+            <span>v0.2.1</span>
           </div>
         </div>
       </aside>
@@ -724,7 +724,7 @@ export default function App() {
                   <Volume2 size={17} />
                 </div>
                 <p className="modal-footnote">
-                  RBX Tools v0.2.0 · Windows desktop edition
+                  RBX Tools v0.2.1 · Windows desktop edition
                 </p>
               </>
             ) : modal === "help" ? (

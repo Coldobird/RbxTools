@@ -1,6 +1,6 @@
 [package]
 name = "rbx-tools"
-version = "0.2.0"
+version = "0.2.1"
 description = "A pocket-sized collection of game utilities"
 authors = ["RBX Tools"]
 edition = "2021"
@@ -18,6 +18,9 @@ test = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[target.'cfg(windows)'.build-dependencies]
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = [] }

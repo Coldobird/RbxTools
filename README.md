@@ -2,11 +2,11 @@
 
 A small Windows desktop utility with a dark, red GBA-inspired interface. Built with Tauri 2, React, TypeScript, Vite, Tailwind CSS, and Rust.
 
-## Version 0.2
+## Version 0.2.1
 
 The tool library opens **Steamy Friends**, with two controls:
 
-- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. Steam launches through the non-elevated desktop session rather than inheriting RBX Tools' administrator privileges.
+- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern instead of inheriting RBX Tools' administrator privileges.
 - **Stop / Restore network:** temporarily block only the detected `steam.exe`, matching the supplied NetLimiter screenshot. Both inbound and outbound IPv4/IPv6 traffic are covered. Steam helpers and games are not added to the target. Restoring also launches the already-running Steam client with `-silent` as a best-effort connection wake-up.
 
 The application requests administrator access on launch and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
