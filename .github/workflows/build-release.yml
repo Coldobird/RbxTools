@@ -9,6 +9,8 @@ on:
         default: v0.2.1
         type: string
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -69,6 +71,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
