@@ -7,7 +7,7 @@ A small Windows desktop utility with a dark, red GBA-inspired interface. Built w
 The tool library opens **Steamy Friends**, with two controls:
 
 - **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern instead of inheriting RBX Tools' administrator privileges.
-- **Stop / Restore network:** temporarily block only the detected `steam.exe`, matching the supplied NetLimiter screenshot. Both inbound and outbound IPv4/IPv6 traffic are covered. Steam helpers and games are not added to the target. Restoring also launches the already-running Steam client with `-silent` as a best-effort connection wake-up.
+- **Stop / Restore network:** temporarily block only the detected `steam.exe`, matching the supplied NetLimiter screenshot. Both inbound and outbound IPv4/IPv6 traffic are covered. Steam helpers and games are not added to the target. After a pause of at least five minutes, restoring waits three seconds and checks Steam's login state through Steamworks. If Steam is still offline, RBX Tools requests the current user's stats, then requests a lobby list only if login has not recovered four seconds later.
 
 The application requests administrator access on launch and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
 
@@ -15,7 +15,7 @@ The application requests administrator access on launch and automatically finds 
 
 Network blocking uses Windows Filtering Platform (WFP) with a **dynamic session**. All four filters and their sublayer are owned by that session. Normal exit closes the session; Windows also removes the session's objects after process termination, including a crash or forced close. No persistent Windows Firewall rules are created. Existing firewall policy is preserved.
 
-"Restore network" means remove RBX Tools' block; it cannot override a block created by another application. Cleanup after abnormal termination follows Windows' session rundown and is not a promise of zero latency. Steam has no public API that forces the desktop client to reconnect immediately, so the wake-up is best effort; **Restart Steam** remains the reliable fallback.
+"Restore network" means remove RBX Tools' block; it cannot override a block created by another application. Cleanup after abnormal termination follows Windows' session rundown and is not a promise of zero latency. The reconnect assistant uses public Steamworks requests that repeatedly triggered `ScheduleImmediateReconnect()` during five-, fifteen-, and thirty-minute local tests. It never closes Steam or the running game.
 
 Steam restart is a deliberate, one-time action, not something that can be undone on app exit. The application only remembers its Steam path preference in its per-user configuration folder.
 

@@ -322,17 +322,6 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
     Err("Steam was launched but did not appear within 20 seconds. Check for a Steam update or sign-in prompt.".into())
 }
 
-/// Steamworks exposes connection callbacks, but no force-reconnect call.
-/// Starting Steam with -silent sends an activation request to the existing
-/// instance and wakes it without opening a new visible client window.
-pub fn request_reconnect(path: &Path) -> Result<(), String> {
-    let path = validate_path(path)?;
-    if matching_processes(&path)?.is_empty() {
-        return Ok(());
-    }
-    launch(&path, &["-silent"])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

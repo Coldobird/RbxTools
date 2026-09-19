@@ -1,5 +1,6 @@
 node_modules/
 dist/
+target-reconnect/
 src-tauri/target/
 src-tauri/gen/
 *.tsbuildinfo

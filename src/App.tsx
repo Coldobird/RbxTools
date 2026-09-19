@@ -212,7 +212,7 @@ export default function App() {
       setStatus(next);
       const message = next.blocked
         ? `Network paused for ${fileName(next.targetPath)}.`
-        : "Network restored. Steam reconnect requested.";
+        : "Network restored. Reconnect assist will run if Steam stays offline after a long pause.";
       setNotice(message);
       addLog(message);
     });
@@ -756,8 +756,8 @@ export default function App() {
                     <p>
                       Click Restore & reconnect or close RBX Tools. Windows also
                       removes these session filters if the app crashes. RBX
-                      Tools then wakes Steam's retry loop; Restart Steam remains
-                      the reliable fallback if Valve's reconnect is slow.
+                      Tools checks Steam after long pauses and requests fresh
+                      account data to trigger an immediate reconnect if needed.
                     </p>
                   </li>
                 </ol>
