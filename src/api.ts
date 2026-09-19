@@ -9,6 +9,11 @@ export interface Status {
   elevated: boolean;
 }
 
+export interface LocalUpdate {
+  version: string;
+  notes: string;
+}
+
 export const desktop = isTauri();
 const previewStatus: Status = {
   steamPath: null,
@@ -54,6 +59,15 @@ export async function setBlocked(blocked: boolean): Promise<Status> {
       "Network controls are available in the installed desktop app.",
     );
   return invoke("set_blocked", { blocked });
+}
+
+export async function getLocalUpdate(): Promise<LocalUpdate | null> {
+  return desktop ? invoke("get_local_update") : null;
+}
+
+export async function installLocalUpdate(): Promise<void> {
+  if (!desktop) throw new Error("Updates are available in the installed desktop app.");
+  return invoke("install_local_update");
 }
 
 export function fileName(path: string | null): string {

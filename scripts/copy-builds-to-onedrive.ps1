@@ -28,4 +28,13 @@ New-Item -ItemType Directory -Force -Path $sharedBuildDirectory | Out-Null
 Copy-Item -LiteralPath $executable -Destination (Join-Path $sharedBuildDirectory "RBX-Tools.exe") -Force
 Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path $sharedBuildDirectory $installer.Name) -Force
 
-Write-Host "Published executable and installer to: $sharedBuildDirectory"
+$package = Get-Content -LiteralPath (Join-Path $projectRoot "package.json") -Raw | ConvertFrom-Json
+$manifest = [ordered]@{
+    version = $package.version
+    installer = $installer.Name
+    notes = "Shared OneDrive build"
+    publishedAt = (Get-Date).ToUniversalTime().ToString("o")
+} | ConvertTo-Json
+Set-Content -LiteralPath (Join-Path $sharedBuildDirectory "latest.json") -Value $manifest -Encoding utf8
+
+Write-Host "Published executable, installer, and update manifest to: $sharedBuildDirectory"

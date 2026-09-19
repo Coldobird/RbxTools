@@ -24,7 +24,10 @@ import {
 import {
   desktop,
   fileName,
+  getLocalUpdate,
   getStatus,
+  installLocalUpdate,
+  type LocalUpdate,
   pickExecutable,
   restartSteam,
   setBlocked,
@@ -108,6 +111,7 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [localUpdate, setLocalUpdate] = useState<LocalUpdate | null>(null);
   const [modal, setModalState] = useState<"settings" | "help" | "force" | null>(
     null,
   );
@@ -153,6 +157,19 @@ export default function App() {
     return () => {
       active = false;
       window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getLocalUpdate()
+      .then((update) => {
+        if (active) setLocalUpdate(update);
+      })
+      // Friends without the shared OneDrive folder use the GitHub update channel.
+      .catch(() => undefined);
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -215,6 +232,24 @@ export default function App() {
         : "Network restored. Reconnect assist will run if Steam stays offline after a long pause.";
       setNotice(message);
       addLog(message);
+    });
+  }
+
+  function checkForSharedUpdate() {
+    void action("check-update", async () => {
+      const update = await getLocalUpdate();
+      setLocalUpdate(update);
+      const message = update
+        ? `Version ${update.version} is ready from your shared Builds folder.`
+        : "You already have the newest shared build.";
+      setNotice(message);
+      addLog(message);
+    });
+  }
+
+  function installSharedUpdate() {
+    void action("install-update", async () => {
+      await installLocalUpdate();
     });
   }
 
@@ -302,7 +337,7 @@ export default function App() {
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
-            <span>v0.2.1</span>
+            <span>v0.2.3</span>
           </div>
         </div>
       </aside>
@@ -718,13 +753,40 @@ export default function App() {
                 </div>
                 <div className="setting-row">
                   <div>
+                    <strong>
+                      {localUpdate
+                        ? `Update v${localUpdate.version} ready`
+                        : "Shared Builds update"}
+                    </strong>
+                    <p>
+                      {localUpdate
+                        ? localUpdate.notes || "Ready from your shared OneDrive folder."
+                        : "Check the shared OneDrive Builds folder."}
+                    </p>
+                  </div>
+                  <button
+                    className="small-button"
+                    disabled={!!busy || !desktop}
+                    onClick={localUpdate ? installSharedUpdate : checkForSharedUpdate}
+                  >
+                    {busy === "install-update"
+                      ? "Starting…"
+                      : busy === "check-update"
+                        ? "Checking…"
+                        : localUpdate
+                          ? "Install"
+                          : "Check now"}
+                  </button>
+                </div>
+                <div className="setting-row">
+                  <div>
                     <strong>Menu sounds</strong>
                     <p>Quiet by default.</p>
                   </div>
                   <Volume2 size={17} />
                 </div>
                 <p className="modal-footnote">
-                  RBX Tools v0.2.1 · Windows desktop edition
+                  RBX Tools v0.2.3 · Windows desktop edition
                 </p>
               </>
             ) : modal === "help" ? (

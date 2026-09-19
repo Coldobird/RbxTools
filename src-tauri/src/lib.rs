@@ -1,4 +1,5 @@
 mod network;
+mod local_update;
 mod steam;
 mod steamworks;
 
@@ -92,6 +93,18 @@ fn resolve_steam_path(state: &AppState) -> Result<Option<String>, String> {
 #[tauri::command]
 fn get_status(state: tauri::State<'_, AppState>) -> Result<Status, String> {
     status(&state)
+}
+
+#[tauri::command]
+fn get_local_update() -> Result<Option<local_update::AvailableUpdate>, String> {
+    local_update::check()
+}
+
+#[tauri::command]
+fn install_local_update(app: tauri::AppHandle) -> Result<(), String> {
+    local_update::install()?;
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -296,6 +309,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_local_update,
+            install_local_update,
             set_path,
             set_blocked,
             restart_steam
