@@ -76,6 +76,25 @@ jobs:
           if (-not $installer) { throw "Tauri did not produce an NSIS installer." }
           Copy-Item -LiteralPath $installer.FullName -Destination "release/RBX-Tools-Setup.exe"
 
+      - name: Determine release target
+        id: release
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag }}"
+            $publish = $true
+          } elseif ($env:GITHUB_REF -like "refs/tags/v*") {
+            $tag = $env:GITHUB_REF_NAME
+            $publish = $true
+          } else {
+            $tag = "v$version"
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+            $publish = $LASTEXITCODE -ne 0
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "publish=$($publish.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -84,11 +103,11 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: steps.release.outputs.publish == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           $files = @("release/RBX-Tools.exe", "release/RBX-Tools-Setup.exe")
           gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
