@@ -1,5 +1,5 @@
-mod network;
 mod local_update;
+mod network;
 mod steam;
 mod steamworks;
 
@@ -96,7 +96,7 @@ fn get_status(state: tauri::State<'_, AppState>) -> Result<Status, String> {
 }
 
 #[tauri::command]
-fn get_local_update() -> Result<Option<local_update::AvailableUpdate>, String> {
+fn get_local_update() -> Result<local_update::UpdateCheck, String> {
     local_update::check()
 }
 

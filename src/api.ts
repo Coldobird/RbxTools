@@ -14,6 +14,11 @@ export interface LocalUpdate {
   notes: string;
 }
 
+export interface LocalUpdateCheck {
+  sharedBuildsAvailable: boolean;
+  update: LocalUpdate | null;
+}
+
 export const desktop = isTauri();
 const previewStatus: Status = {
   steamPath: null,
@@ -61,8 +66,10 @@ export async function setBlocked(blocked: boolean): Promise<Status> {
   return invoke("set_blocked", { blocked });
 }
 
-export async function getLocalUpdate(): Promise<LocalUpdate | null> {
-  return desktop ? invoke("get_local_update") : null;
+export async function getLocalUpdate(): Promise<LocalUpdateCheck> {
+  return desktop
+    ? invoke("get_local_update")
+    : { sharedBuildsAvailable: false, update: null };
 }
 
 export async function installLocalUpdate(): Promise<void> {
