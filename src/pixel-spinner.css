@@ -1,0 +1,12 @@
+.pixel-spinner-block {
+  animation: pixel-spinner-chase 1.2s steps(1, end) infinite;
+}
+
+@keyframes pixel-spinner-chase {
+  0%, 24% { opacity: 1; }
+  25%, 100% { opacity: .3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-spinner-block { animation: none; opacity: 1; }
+}

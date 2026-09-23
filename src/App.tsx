@@ -9,13 +9,15 @@ import {
   FolderOpen,
   Grid2X2,
   LoaderCircle,
+  Preview,
   Radio,
   RotateCw,
   Settings2,
   Wifi,
   WifiOff,
   X,
-} from "lucide-react";
+  SteamFriendLogo,
+} from "./PixelIcons";
 import appIcon from "../assets/app-icon.svg";
 import {
   desktop,
@@ -40,27 +42,9 @@ const initialStatus: Status = {
   elevated: false,
 };
 
-function SteamFriendLogo({ small = false }: { small?: boolean }) {
-  return (
-    <svg
-      className={small ? "steam-friend-logo small" : "steam-friend-logo"}
-      viewBox="0 0 64 64"
-      aria-hidden="true"
-    >
-      <circle cx="32" cy="32" r="30" fill="#24151b" />
-      <circle cx="42" cy="20" r="10" fill="none" stroke="currentColor" strokeWidth="6" />
-      <circle cx="19" cy="43" r="8" fill="none" stroke="currentColor" strokeWidth="6" />
-      <path d="M25 39l10-14M26 46l13-18" stroke="currentColor" strokeWidth="7" strokeLinecap="round" />
-      <path d="M13 40L4 36" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-      <circle cx="42" cy="20" r="3" fill="currentColor" />
-      <circle cx="19" cy="43" r="2.5" fill="currentColor" />
-    </svg>
-  );
-}
-
 function StatusIcon({ state, label }: { state: string; label: string }) {
   const Icon = state === "error" ? CircleAlert : state === "busy" ? LoaderCircle : state === "blocked" ? WifiOff : state === "online" ? Check : Power;
-  return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} className={state === "busy" ? "spin" : undefined} aria-hidden="true" /></span>;
+  return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} aria-hidden="true" /></span>;
 }
 
 
@@ -286,7 +270,7 @@ export default function App() {
         <main>
           {!desktop && (
             <div className="preview-strip">
-              <Radio size={14} /> Interface preview · Desktop actions are available in the Windows app.
+              <Preview size={14} /> Interface preview · Desktop actions are available in the Windows app.
             </div>
           )}
 
@@ -370,7 +354,7 @@ export default function App() {
                     disabled={!!busy || loading || !desktop || !status.steamPath}
                     onClick={() => restart()}
                   >
-                    {busy === "restart" ? <LoaderCircle className="spin" size={16} /> : <RotateCw size={16} />}
+                    {busy === "restart" ? <LoaderCircle size={16} /> : <RotateCw size={16} />}
                     {busy === "restart" ? "Restarting Steam…" : "Restart Steam"}
                   </button>
                   <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
@@ -399,7 +383,7 @@ export default function App() {
                     onClick={toggleNetwork}
                   >
                     {busy === "network" ? (
-                      <LoaderCircle className="spin" size={16} />
+                      <LoaderCircle size={16} />
                     ) : status.blocked ? (
                       <Wifi size={16} />
                     ) : (

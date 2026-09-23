@@ -387,8 +387,8 @@ main {
 }
 
 .steam-friend-logo.small {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
   filter: none;
 }
 
@@ -856,14 +856,6 @@ main {
 
 .modal-actions button {
   flex: 1;
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 @keyframes pulse {
