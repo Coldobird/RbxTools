@@ -254,7 +254,7 @@ export default function App() {
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
-            <span>v0.2.4</span>
+            <span>v0.2.5</span>
           </div>
         </div>
       </aside>
@@ -472,7 +472,7 @@ export default function App() {
                           : "Check for updates"}
                   </button>
                 </div>
-                <p className="modal-footnote">RBX Tools v0.2.4 · Windows desktop edition</p>
+                <p className="modal-footnote">RBX Tools v0.2.5 · Windows desktop edition</p>
               </>
             ) : (
               <>
