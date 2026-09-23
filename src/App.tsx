@@ -4,13 +4,11 @@ import {
   ArrowLeft,
   CircleAlert,
   Power,
-  ChevronDown,
   ChevronRight,
   FolderOpen,
   Grid2X2,
   LoaderCircle,
   Preview,
-  Radio,
   RotateCw,
   Settings2,
   Wifi,
@@ -32,7 +30,6 @@ import {
 } from "./api";
 
 type Page = "library" | "steamy";
-type LogEntry = { message: string; time: string };
 
 const initialStatus: Status = {
   steamPath: null,
@@ -43,7 +40,7 @@ const initialStatus: Status = {
 };
 
 function StatusIcon({ state, label }: { state: string; label: string }) {
-  const Icon = state === "error" ? CircleAlert : state === "busy" ? LoaderCircle : state === "blocked" ? WifiOff : state === "online" ? Check : Power;
+  const Icon = state === "error" || state === "setup" ? CircleAlert : state === "busy" ? LoaderCircle : state === "blocked" ? WifiOff : state === "online" ? Check : Power;
   return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} aria-hidden="true" /></span>;
 }
 
@@ -57,7 +54,6 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [localUpdate, setLocalUpdate] = useState<LocalUpdate | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const busyRef = useRef(false);
   const statusGeneration = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
@@ -65,29 +61,20 @@ export default function App() {
 
   const toolState = error
     ? { label: "Needs attention", className: "error" }
-    : busy
-      ? { label: "Working", className: "busy" }
+    : busy || loading
+      ? { label: "Checking Steam", className: "busy" }
       : status.blocked
         ? { label: "Steam network blocked", className: "blocked" }
         : status.steamRunning
-          ? { label: "Steam running", className: "online" }
-          : { label: "Ready", className: "idle" };
+          ? { label: "Steam running", className: "running" }
+          : status.steamPath
+            ? { label: "Steam not running", className: "idle" }
+            : { label: "Steam location needed", className: "setup" };
 
   function setModal(next: "settings" | "force" | null) {
     if (next && !modal) returnFocusRef.current = document.activeElement as HTMLElement | null;
     setModalState(next);
   }
-
-  const addLog = (message: string) =>
-    setLogs((previous) =>
-      [
-        {
-          message,
-          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-        ...previous,
-      ].slice(0, 4),
-    );
 
   useEffect(() => {
     let active = true;
@@ -110,6 +97,18 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     let active = true;
@@ -161,7 +160,6 @@ export default function App() {
       if (message.includes("STEAM_STILL_RUNNING")) setModal("force");
       else {
         setError(message);
-        addLog("Action could not be completed.");
       }
     } finally {
       busyRef.current = false;
@@ -175,7 +173,6 @@ export default function App() {
       const message = await restartSteam(force);
       setStatus(await getStatus());
       setNotice(message);
-      addLog(message);
     });
   }
 
@@ -187,7 +184,6 @@ export default function App() {
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
       setNotice(message);
-      addLog(message);
     });
   }
 
@@ -201,7 +197,6 @@ export default function App() {
           ? `Version ${result.update.version} is ready to install.`
           : "RBX Tools is up to date.";
       setNotice(message);
-      addLog(message);
     });
   }
 
@@ -216,7 +211,7 @@ export default function App() {
       const next = await pickExecutable("steam");
       if (next) {
         setStatus(next);
-        addLog("Steam location updated.");
+        setNotice("Steam location updated.");
       }
     });
   }
@@ -224,18 +219,17 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" onClick={() => setPage("library")} aria-label="RBX Tools home">
-          <img src={appIcon} alt="" />
+        <div className="brand">
+          <span className="brand-emblem"><img src={appIcon} alt="" /></span>
           <strong>RBX <span>TOOLS</span></strong>
-        </button>
+        </div>
 
-        <div className="nav-label">PLAYER MENU</div>
         <nav aria-label="Main navigation">
           <button
             className={page === "library" ? "nav-item active" : "nav-item"}
             onClick={() => setPage("library")}
           >
-            <Grid2X2 size={17} /> Tool library
+            <Grid2X2 size={17} /> Tool Library
             <span className="nav-count">1</span>
           </button>
           <button
@@ -261,39 +255,12 @@ export default function App() {
 
       <div className="workspace">
         <div className="pocket-landscape" aria-hidden="true" />
-        <header className="topbar">
-          <nav className="breadcrumb" aria-label="Breadcrumb">
-            <button onClick={() => setPage("library")}><ArrowLeft size={18} /> Tool library</button>
-          </nav>
-        </header>
-
         <main>
-          {!desktop && (
-            <div className="preview-strip">
-              <Preview size={14} /> Interface preview · Desktop actions are available in the Windows app.
-            </div>
-          )}
-
-          {error && (
-            <div role="alert" className="message error">
-              <span>{error}</span>
-              <button aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button>
-            </div>
-          )}
-          {notice && (
-            <div role="status" className="message success">
-              <Check size={16} />
-              <span>{notice}</span>
-              <button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
-            </div>
-          )}
-
           {page === "library" ? (
             <section className="library-page">
               <div className="page-heading">
                 <div>
-                  <h1>Your tools</h1>
-                  <p>Small helpers for the games you play.</p>
+                  <h1>Tool Library</h1>
                 </div>
               </div>
 
@@ -330,6 +297,9 @@ export default function App() {
           ) : (
             <section className="tool-page">
               <div className="page-heading tool-page-heading">
+                <button className="tool-back" onClick={() => setPage("library")} aria-label="Back to tool library" title="Back to tool library">
+                  <ArrowLeft size={30} />
+                </button>
                 <SteamFriendLogo />
                 <h1>Steamy Friends</h1>
               </div>
@@ -401,29 +371,29 @@ export default function App() {
                 </section>
               </div>
 
-              <details className="activity-panel">
-                <summary>
-                  <span><Radio size={15} /> Session activity</span>
-                  <ChevronDown size={16} />
-                </summary>
-                <div className="activity-content">
-                  {logs.length ? (
-                    logs.map((log, index) => (
-                      <div className="log-row" key={`${log.time}-${index}`}>
-                        <span className="log-bullet" />
-                        <span>{log.message}</span>
-                        <time>{log.time}</time>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="activity-empty">Nothing to report yet.</div>
-                  )}
-                </div>
-              </details>
             </section>
           )}
         </main>
       </div>
+
+      {(error || notice) && (
+        <div className="toast-stack">
+          {error && (
+            <div role="alert" className="toast error">
+              {desktop ? <CircleAlert size={17} /> : <Preview size={17} />}
+              <span>{error}</span>
+              <button aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button>
+            </div>
+          )}
+          {notice && (
+            <div role="status" className="toast success">
+              <Check size={17} />
+              <span>{notice}</span>
+              <button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
+            </div>
+          )}
+        </div>
+      )}
 
       {modal && (
         <div className="modal-backdrop" onClick={() => { if (modal !== "force") setModal(null); }}>

@@ -22,6 +22,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   min-width: 680px;
@@ -112,14 +116,6 @@ p {
   color: var(--accent);
 }
 
-.nav-label {
-  margin: 0 12px 13px;
-  color: #7f8881;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 1.7px;
-}
-
 .nav-item {
   width: 100%;
   min-height: 43px;
@@ -130,7 +126,7 @@ p {
   gap: 10px;
   color: #aeb4ac;
   background: transparent;
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   border-radius: 5px;
   font-size: 12px;
   text-align: left;
@@ -203,36 +199,6 @@ p {
   mask-image: linear-gradient(to bottom, transparent 0%, #000 34%, #000 100%);
 }
 
-.topbar {
-  position: relative;
-  z-index: 2;
-  height: 68px;
-  padding: 0 38px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid #2b3130;
-  background: #111516d9;
-  backdrop-filter: blur(10px);
-}
-
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #737d76;
-  font-size: 11px;
-}
-
-.breadcrumb button {
-  padding: 4px 0;
-  color: #d6dbd3;
-  background: transparent;
-}
-
-.breadcrumb button:hover {
-  color: var(--accent-soft);
-}
-
 main {
   position: relative;
   z-index: 1;
@@ -242,44 +208,56 @@ main {
   padding: 36px 38px 64px;
 }
 
-.preview-strip,
-.message {
+.toast-stack {
+  position: fixed;
+  z-index: 25;
+  bottom: 24px;
+  right: 28px;
+  width: min(440px, calc(100vw - 40px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 13px;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
   border: 1px solid #593238;
   border-radius: 4px;
   background: #2c2023e8;
   color: #d7898f;
-  font-size: 10px;
-  backdrop-filter: blur(10px);
-}
-
-.message {
   font-size: 12px;
   line-height: 1.6;
+  box-shadow: 4px 5px 0 #190e15;
+  pointer-events: auto;
 }
 
-.message span {
+.toast > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.toast span {
   flex: 1;
 }
 
-.message button {
+.toast button {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   padding: 3px;
   background: transparent;
 }
 
-.message.error {
+.toast.error {
   color: #efb7a9;
   background: #382725e8;
   border-color: #6f463f;
 }
 
-.message.success {
+.toast.success {
   color: #ffadb3;
   background: #382327e8;
   border-color: #73383f;
@@ -304,7 +282,14 @@ main {
 }
 
 .library-page {
-  padding-top: 6px;
+  padding-top: 8px;
+}
+
+.library-page .page-heading {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  margin-bottom: 28px;
 }
 
 .tools-grid {
@@ -315,8 +300,7 @@ main {
 
 .tool-card,
 .empty-slot,
-.control-card,
-.activity-panel {
+.control-card {
   backdrop-filter: blur(11px);
   box-shadow: 0 14px 38px #0709092e;
 }
@@ -539,6 +523,27 @@ main {
   height: 48px;
 }
 
+.tool-back {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 42px;
+  background: transparent;
+  color: var(--accent-soft);
+}
+
+.tool-back:hover {
+  color: #fff0dc;
+  background: transparent;
+  transform: translateX(-2px);
+}
+
+.tool-back:not(:disabled):active {
+  color: #f39897;
+  transform: translateX(-4px);
+}
+
 .control-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -663,84 +668,6 @@ main {
 
 .primary-button.amber-button:not(:disabled):hover {
   background: #f0d5a6;
-}
-
-.activity-panel {
-  margin-top: 22px;
-  overflow: hidden;
-  background: #171b1bd9;
-  border: 1px solid #3b4540;
-  border-radius: 6px;
-}
-
-.activity-panel summary {
-  min-height: 51px;
-  padding: 0 17px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #cfd5cc;
-  cursor: pointer;
-  list-style: none;
-  font-size: 12px;
-}
-
-.activity-panel summary::-webkit-details-marker {
-  display: none;
-}
-
-.activity-panel summary span {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.activity-panel summary span svg {
-  color: #d16c74;
-}
-
-.activity-panel summary > svg {
-  color: #8d978e;
-  transition: transform 0.15s ease;
-}
-
-.activity-panel[open] summary > svg {
-  transform: rotate(180deg);
-}
-
-.activity-content {
-  padding: 0 17px 15px;
-  border-top: 1px solid #343c38;
-}
-
-.activity-empty {
-  padding: 16px 0 2px;
-  color: #7f8c80;
-  font-size: 11px;
-}
-
-.log-row {
-  padding: 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #dc999e;
-  border-bottom: 1px solid #303834;
-  font-size: 11px;
-}
-
-.log-row time {
-  margin-left: auto;
-  color: #7f8e83;
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-.log-bullet {
-  width: 5px;
-  height: 5px;
-  flex: 0 0 auto;
-  background: var(--accent);
 }
 
 .modal-backdrop {
@@ -890,7 +817,6 @@ main {
     width: calc(100% - 190px);
   }
 
-  .topbar,
   main {
     padding-left: 25px;
     padding-right: 25px;
@@ -939,10 +865,6 @@ main {
 
   main {
     padding: 26px 20px 50px;
-  }
-
-  .topbar {
-    padding-inline: 20px;
   }
 
   .tool-card {
