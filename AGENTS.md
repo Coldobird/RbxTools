@@ -4,6 +4,7 @@
 - Every new application version must automatically create a GitHub Release when its first `main` build completes.
 - The release tag is `v` followed by the version in `src-tauri/tauri.conf.json`.
 - Ordinary commits that do not change to an unreleased version still build and upload an Actions artifact, but do not create another release.
+- Whenever the application version is bumped, build it locally and publish the matching executable, NSIS installer, and `latest.json` to the shared OneDrive Builds folder so the in-app updater can see it. Verify that the manifest names the new version and installer. If OneDrive is unavailable, report that the publish is incomplete.
 
 # Visual direction
 

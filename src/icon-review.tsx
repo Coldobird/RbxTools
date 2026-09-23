@@ -22,7 +22,7 @@ import {
   WifiOff,
   X,
 } from "./PixelIcons";
-import appIcon from "../assets/app-icon.svg";
+import appIcon from "../assets/app-logo.png";
 import "./icon-review.css";
 
 type Item = { name: string; usedFor: string; icon: React.ReactNode };
@@ -117,7 +117,7 @@ ReactDOM.createRoot(document.getElementById("icon-review-root")!).render(
           {index + 1 === 6 && <div className="context-compare"><InContextCheck letter="6A · check" asset="check" /><InContextCheck letter="6C · checked box" asset="checkbox-on" /></div>}
           {index + 1 === 8 && <><div className="spinner-context"><InContextSpinner letter="A" variant="blocks" /><InContextSpinner letter="B" variant="bars" /><InContextSpinner letter="C" variant="chase" /></div><p className="row-caption">8C is now the app’s busy indicator. These square-pixel animations adapt patterns from the MIT-licensed <a href="https://github.com/n3r4zzurr0/svg-spinners" target="_blank" rel="noreferrer">SVG Spinners</a> collection.</p></>}
         </div>)}
-        <div className="candidate-row reserved"><div className="candidate-heading"><strong>11. RBX Tools badge</strong><span>You’ll provide the artwork; leaving the current badge in place.</span></div><div className="candidate-option current"><div className="candidate-art"><img src={appIcon} alt="" /></div><span>Current</span></div></div>
+        <div className="candidate-row reserved"><div className="candidate-heading"><strong>11. RBX Tools badge</strong><span>Coldobird pixel art</span></div><div className="candidate-option current"><div className="candidate-art"><img src={appIcon} alt="" /></div><span>Current</span></div></div>
       </section>
       <p className="review-note">Most A/B/C assets are from <a href="https://github.com/halfmage/pixelarticons" target="_blank" rel="noreferrer">Pixelarticons</a> (MIT). Row 2A is our paired variant; row 8 uses square-pixel adaptations of <a href="https://github.com/n3r4zzurr0/svg-spinners" target="_blank" rel="noreferrer">SVG Spinners</a> (MIT).</p>
       <details className="chosen-details"><summary>Already selected · 7 icons</summary><Group title="Selected replacements" items={selected} /></details>

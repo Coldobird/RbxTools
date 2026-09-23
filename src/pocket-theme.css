@@ -16,7 +16,7 @@
   padding-top: 32px;
 }
 .brand { margin-bottom: 42px; gap: 12px; }
-.brand img { width: 48px; height: 48px; }
+.brand img { width: 48px; height: 48px; image-rendering: pixelated; }
 .brand strong { font-size: 15px; line-height: 1.6; white-space: normal; }
 .brand strong span { display: block; color: #ffd0bc; }
 .nav-label { color: #d18b8d; }

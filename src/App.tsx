@@ -18,7 +18,7 @@ import {
   X,
   SteamFriendLogo,
 } from "./PixelIcons";
-import appIcon from "../assets/app-icon.svg";
+import appIcon from "../assets/app-logo.png";
 import {
   desktop,
   getLocalUpdate,
@@ -254,7 +254,7 @@ export default function App() {
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
-            <span>v0.2.6</span>
+            <span>v0.2.7</span>
           </div>
         </div>
       </aside>
@@ -472,7 +472,7 @@ export default function App() {
                           : "Check for updates"}
                   </button>
                 </div>
-                <p className="modal-footnote">RBX Tools v0.2.6 · Windows desktop edition</p>
+                <p className="modal-footnote">RBX Tools v0.2.7 · Windows desktop edition</p>
               </>
             ) : (
               <>

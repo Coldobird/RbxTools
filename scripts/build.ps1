@@ -7,7 +7,7 @@ $env:CARGO_BUILD_JOBS = '2'
 New-Item -ItemType Directory -Path $rbxCache -Force | Out-Null
 $rbxCache = (& node -p "require('fs').realpathSync.native(process.argv[1])" $rbxCache).Trim()
 # Build outside Documents so Windows Controlled Folder Access need not be disabled.
-foreach ($rbxItem in @('package.json','package-lock.json','tsconfig.json','vite.config.ts','index.html','src','assets')) {
+foreach ($rbxItem in @('package.json','package-lock.json','tsconfig.json','vite.config.ts','index.html','src','assets','public','scripts')) {
     $rbxPath = Join-Path $rbxSource $rbxItem
     if (Test-Path -LiteralPath $rbxPath) { Copy-Item -LiteralPath $rbxPath -Destination $rbxCache -Recurse -Force }
 }
@@ -22,7 +22,7 @@ try {
     & npm.cmd install --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
     if (!(Test-Path 'src-tauri\icons\icon.ico')) {
-        & npm.cmd run tauri -- icon assets/app-icon.svg
+        & npm.cmd run tauri -- icon assets/app-icon.png
         if ($LASTEXITCODE -ne 0) { throw 'Icon generation failed.' }
     }
     switch ($Mode) {
