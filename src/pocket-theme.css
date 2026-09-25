@@ -76,6 +76,9 @@
   background: transparent;
   border: 0;
   box-shadow: none;
+  width: 48px;
+  height: 56px;
+  margin-right: -14px;
 }
 .tool-back:hover { background: transparent; }
 .steam-friend-logo {
@@ -118,12 +121,14 @@ button:disabled { opacity: .62; }
 .text-button { color: #f3b4ab; font-size: 12px; }
 .status-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: #efd0bd; }
 .nav-item > .status-icon { margin-left: auto; }
-.status-icon.online { color: #bed79e; }
-.status-icon.running { color: #bed79e; }
+.status-icon.running, .status-icon.connected { color: #bed79e; }
+.status-icon.running, .status-icon.connected { animation: status-icon-expire 5s linear forwards; }
+@keyframes status-icon-expire { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+.status-icon.restarting { color: #ffd0bc; }
 .status-icon.blocked { color: #ffd294; }
-.status-icon.error { color: #ffe2b6; }
-.status-icon.setup { color: #ffd294; }
-.status-icon.idle { color: #deb4af; }
+.restart-spin { animation: pixel-restart-spin 1.2s steps(8, end) infinite; transform-origin: center; }
+@keyframes pixel-restart-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .restart-spin, .status-icon.running, .status-icon.connected { animation: none; } }
 .toast { border: 2px solid #c56673; border-radius: 0; background: #512733; color: #ffdbc9; font-size: 12px; box-shadow: inset 2px 2px #79404b, 4px 5px #190e15; }
 .toast.error { border-color: #df8c72; color: #ffe0cb; background: #59303a; }
 .toast.success { border-color: #a5bd82; color: #e2efc7; background: #384031; }
@@ -142,7 +147,8 @@ button:disabled { opacity: .62; }
 .setting-row { border-color: #9b5661; }
 .small-button { border-radius: 0; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
 .modal-close { color: #ffcfbc; }
-.amber-button { background: #97654a; border-color: #f3c08b; }
+.amber-button { background: #97654a; border-color: #f3c08b; color: #fff1d4; }
+.primary-button.amber-button:not(:disabled):hover { background: #a36d50; color: #fff5df; }
 @media (max-width: 1000px) {
   .pocket-landscape { left: 190px; }
   .sidebar nav { margin-inline: -12px; padding-inline: 12px; }

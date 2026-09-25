@@ -6,7 +6,7 @@ type IconProps = { size?: number; className?: string };
 type IconName =
   | "check" | "arrowLeft" | "alert" | "power" | "chevronDown" | "chevronRight"
   | "folder" | "grid" | "activity" | "preview" | "restart" | "settings"
-  | "wifi" | "wifiOff" | "close";
+  | "wifi" | "wifiOff" | "close" | "play";
 
 // Keep edges square so the 16px RBX drawings and 24px sourced glyphs match the
 // app badge and landscape when scaled by the desktop webview.
@@ -25,6 +25,7 @@ const glyphs: Record<IconName, ReactNode> = {
   settings: <><path d="M6 0h4v2h2v2h2v2h2v4h-2v2h-2v2h-2v2H6v-2H4v-2H2v-2H0V6h2V4h2V2h2zm1 3H5v2H3v2H2v2h1v2h2v2h2v1h2v-1h2v-2h2V9h1V7h-1V5h-2V3H9z" /><path d="M6 6h4v4H6z" /></>,
   wifi: <path d="M4 3h8v1h2v2h-2V5H4v1H2V4h2zM5 7h6v1h2v2h-2V9H5v1H3V8h2zm2 4h2v1h1v1H9v2H7v-2H6v-1h1z" />,
   wifiOff: <><path d="M4 3h8v1h2v2h-2V5H5zm1 4h6v1h2v2h-2V9H7zm2 4h2v1h1v1H9v2H7v-2H6v-1h1z" /><path d="M1 1h2v2h2v2h2v2h2v2h2v2h2v2h2v2h-2v-2h-2v-2H9V9H7V7H5V5H3V3H1z" /></>,
+  play: <path d="M3 1h2v14H3z M5 2h1v1H5z M5 3h2v1H5z M6 4h2v1H6z M7 5h2v1H7z M8 6h2v1H8z M9 7h2v2H9z M8 9h2v1H8z M7 10h2v1H7z M6 11h2v1H6z M5 12h2v1H5z M5 13h1v1H5z" />,
   close: <path d="M2 1h2v2h2v2h4V3h2V1h2v2h-2v2h-2v2H9v2h1v2h2v2h2v2h-2v-2h-2v-2H6v2H4v2H2v-2h2v-2h2V9h1V7H6V5H4V3H2z" />,
 };
 
@@ -75,6 +76,7 @@ export function LoaderCircle({ size = 16, className }: IconProps) {
 }
 export const Radio = makeIcon("activity");
 export const Preview = makeIcon("preview");
+export const Play = makeIcon("play");
 export const RotateCw = makeIcon("restart");
 export const Settings2 = makeIcon("settings");
 export const Wifi = makeIcon("wifi");

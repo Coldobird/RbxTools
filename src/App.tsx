@@ -3,11 +3,10 @@ import {
   Check,
   ArrowLeft,
   CircleAlert,
-  Power,
   ChevronRight,
   FolderOpen,
   Grid2X2,
-  LoaderCircle,
+  Play,
   Preview,
   RotateCw,
   Settings2,
@@ -17,6 +16,7 @@ import {
   SteamFriendLogo,
 } from "./PixelIcons";
 import appIcon from "../assets/app-logo.png";
+import tauriConfig from "../src-tauri/tauri.conf.json";
 import {
   desktop,
   getLocalUpdate,
@@ -30,6 +30,7 @@ import {
 } from "./api";
 
 type Page = "library" | "steamy";
+const appVersion = tauriConfig.version;
 
 const initialStatus: Status = {
   steamPath: null,
@@ -38,10 +39,15 @@ const initialStatus: Status = {
   blocked: false,
   elevated: false,
 };
+const previewSteamPath = "C:\\Preview\\Steam\\steam.exe";
+const previewDelay = () => new Promise<void>((resolve) => window.setTimeout(resolve, 650));
 
-function StatusIcon({ state, label }: { state: string; label: string }) {
-  const Icon = state === "error" || state === "setup" ? CircleAlert : state === "busy" ? LoaderCircle : state === "blocked" ? WifiOff : state === "online" ? Check : Power;
-  return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} aria-hidden="true" /></span>;
+type IconState = "restarting" | "running" | "blocked" | "connected" | null;
+
+function StatusIcon({ state, label }: { state: IconState; label: string }) {
+  if (!state) return null;
+  const Icon = state === "restarting" ? RotateCw : state === "running" ? Play : state === "blocked" ? WifiOff : Wifi;
+  return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} className={state === "restarting" ? "restart-spin" : undefined} /></span>;
 }
 
 
@@ -54,17 +60,34 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [localUpdate, setLocalUpdate] = useState<LocalUpdate | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | null>(null);
+  const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
+  const [networkPhase, setNetworkPhase] = useState<"reconnecting" | "connected" | null>(null);
+  const restartTimer = useRef<number | null>(null);
+  const networkTimer = useRef<number | null>(null);
   const busyRef = useRef(false);
   const statusGeneration = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => () => {
+    if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
+    if (networkTimer.current !== null) window.clearTimeout(networkTimer.current);
+  }, []);
+
+  const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "running" && status.steamRunning ? "running" : null;
+  const networkIcon: IconState = status.blocked ? "blocked" : networkPhase === "connected" ? "connected" : null;
+  const toolIcon: IconState = restartPhase === "restarting" ? "restarting" : networkIcon ?? restartIcon;
+
   const toolState = error
     ? { label: "Needs attention", className: "error" }
-    : busy || loading
-      ? { label: "Checking Steam", className: "busy" }
+    : restartPhase === "restarting"
+      ? { label: busy === "restart" ? "Restarting Steam" : "Confirming Steam startup", className: "busy" }
+      : busy || loading
+        ? { label: busy === "network" ? "Changing network state" : "Checking Steam", className: "busy" }
       : status.blocked
         ? { label: "Steam network blocked", className: "blocked" }
+        : networkPhase === "connected"
+          ? { label: "Steam connection restored", className: "connected" }
         : status.steamRunning
           ? { label: "Steam running", className: "running" }
           : status.steamPath
@@ -77,6 +100,10 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!desktop) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     const refresh = async () => {
       if (busyRef.current) return;
@@ -111,6 +138,7 @@ export default function App() {
   }, [notice]);
 
   useEffect(() => {
+    if (!desktop) return;
     let active = true;
     void getLocalUpdate()
       .then((result) => {
@@ -156,6 +184,8 @@ export default function App() {
     try {
       await work();
     } catch (err) {
+      if (name === "restart") setRestartPhase(null);
+      if (name === "network") setNetworkPhase(null);
       const message = String(err);
       if (message.includes("STEAM_STILL_RUNNING")) setModal("force");
       else {
@@ -168,27 +198,65 @@ export default function App() {
   }
 
   function restart(force = false) {
+    if (busyRef.current) return;
     setModal(null);
+    if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
+    setRestartPhase("restarting");
     void action("restart", async () => {
+      if (!desktop) {
+        await previewDelay();
+        setStatus((current) => ({ ...current, steamRunning: true }));
+        setNotice("Steam restarted (preview only). No process was changed.");
+        setRestartPhase("running");
+        restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
+        return;
+      }
       const message = await restartSteam(force);
       setStatus(await getStatus());
       setNotice(message);
+      setRestartPhase("running");
+      restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
     });
   }
 
   function toggleNetwork() {
+    if (busyRef.current) return;
+    if (networkTimer.current !== null) window.clearTimeout(networkTimer.current);
+    setNetworkPhase(status.blocked ? "reconnecting" : null);
     void action("network", async () => {
+      if (!desktop) {
+        await previewDelay();
+        const blocked = !status.blocked;
+        setStatus((current) => ({ ...current, blocked }));
+        setNotice(blocked
+          ? "Steam network paused (preview only). No traffic was changed."
+          : "Steam network restored (preview only). No traffic was changed.");
+        if (!blocked) {
+          setNetworkPhase("connected");
+          networkTimer.current = window.setTimeout(() => setNetworkPhase(null), 5000);
+        }
+        return;
+      }
       const next = await setBlocked(!status.blocked);
       setStatus(next);
       const message = next.blocked
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
       setNotice(message);
+      if (!next.blocked) {
+        setNetworkPhase("connected");
+        networkTimer.current = window.setTimeout(() => setNetworkPhase(null), 5000);
+      }
     });
   }
 
   function checkForUpdate() {
     void action("check-update", async () => {
+      if (!desktop) {
+        await previewDelay();
+        setNotice("Update check complete (preview only). No update was installed.");
+        return;
+      }
       const result = await getLocalUpdate();
       setLocalUpdate(result.update);
       const message = !result.sharedBuildsAvailable
@@ -208,6 +276,12 @@ export default function App() {
 
   function chooseSteam() {
     void action("path", async () => {
+      if (!desktop) {
+        await previewDelay();
+        setStatus((current) => ({ ...current, steamPath: previewSteamPath, targetPath: previewSteamPath }));
+        setNotice("Demo steam.exe selected (preview only). No file was accessed.");
+        return;
+      }
       const next = await pickExecutable("steam");
       if (next) {
         setStatus(next);
@@ -238,7 +312,7 @@ export default function App() {
           >
             <SteamFriendLogo small />
             <span className="nav-tool-name">Steamy Friends</span>
-            <StatusIcon state={toolState.className} label={toolState.label} />
+            <StatusIcon state={toolIcon} label={toolState.label} />
           </button>
         </nav>
 
@@ -248,7 +322,7 @@ export default function App() {
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
-            <span>v0.2.7</span>
+            <span>v{appVersion}</span>
           </div>
         </div>
       </aside>
@@ -270,7 +344,7 @@ export default function App() {
                     <div className="art-grid" />
                     <div className="friend-orbit"><SteamFriendLogo /></div>
                     <span className="art-status">
-                      <StatusIcon state={toolState.className} label={toolState.label} />
+                      <StatusIcon state={toolIcon} label={toolState.label} />
                       {toolState.label}
                     </span>
                   </div>
@@ -298,7 +372,7 @@ export default function App() {
             <section className="tool-page">
               <div className="page-heading tool-page-heading">
                 <button className="tool-back" onClick={() => setPage("library")} aria-label="Back to tool library" title="Back to tool library">
-                  <ArrowLeft size={30} />
+                  <ArrowLeft size={41} />
                 </button>
                 <SteamFriendLogo />
                 <h1>Steamy Friends</h1>
@@ -310,9 +384,13 @@ export default function App() {
                   <h2>Restart Steam</h2>
                   <p>Close Steam, then bring it right back for a fresh session.</p>
                   <div className="control-status">
-                    <StatusIcon state={status.steamRunning ? "online" : "idle"} label={status.steamRunning ? "Running" : "Inactive"} />
+                    <StatusIcon state={restartIcon} label={restartPhase === "restarting" ? "Restarting Steam" : "Steam running"} />
                     {loading
                       ? "Checking Steam…"
+                      : busy === "restart"
+                        ? "Restarting Steam…"
+                      : restartPhase === "restarting"
+                        ? "Confirming Steam startup…"
                       : status.steamRunning
                         ? "Steam is running"
                         : status.steamPath
@@ -321,10 +399,9 @@ export default function App() {
                   </div>
                   <button
                     className="primary-button"
-                    disabled={!!busy || loading || !desktop || !status.steamPath}
+                    disabled={!!busy || loading || !status.steamPath}
                     onClick={() => restart()}
                   >
-                    {busy === "restart" ? <LoaderCircle size={16} /> : <RotateCw size={16} />}
                     {busy === "restart" ? "Restarting Steam…" : "Restart Steam"}
                   </button>
                   <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
@@ -340,8 +417,12 @@ export default function App() {
                   <h2>{status.blocked ? "Network paused" : "Stop network"}</h2>
                   <p>Pause incoming and outgoing traffic for Steam only.</p>
                   <div className="control-status">
-                    <StatusIcon state={status.blocked ? "blocked" : status.targetPath ? "online" : "idle"} label={status.blocked ? "Blocked" : status.targetPath ? "Unblocked" : "Setup needed"} />
-                    {status.blocked
+                    <StatusIcon state={networkIcon} label={status.blocked ? "Connection blocked" : "Connection up"} />
+                    {busy === "network"
+                      ? status.blocked ? "Restoring connection…" : "Pausing connection…"
+                      : networkPhase === "reconnecting" && !status.blocked
+                        ? "Confirming connection…"
+                      : status.blocked
                       ? "Incoming and outgoing traffic blocked"
                       : status.targetPath
                         ? "No RBX block active"
@@ -349,16 +430,9 @@ export default function App() {
                   </div>
                   <button
                     className={status.blocked ? "primary-button amber-button" : "secondary-button"}
-                    disabled={!!busy || loading || !desktop || !status.targetPath}
+                    disabled={!!busy || loading || !status.targetPath}
                     onClick={toggleNetwork}
                   >
-                    {busy === "network" ? (
-                      <LoaderCircle size={16} />
-                    ) : status.blocked ? (
-                      <Wifi size={16} />
-                    ) : (
-                      <WifiOff size={16} />
-                    )}
                     {busy === "network"
                       ? status.blocked ? "Restoring and reconnecting…" : "Pausing connection…"
                       : status.blocked ? "Restore and reconnect" : "Stop network"}
@@ -430,7 +504,7 @@ export default function App() {
                   </div>
                   <button
                     className="small-button"
-                    disabled={!!busy || !desktop}
+                    disabled={!!busy}
                     onClick={localUpdate ? installSharedUpdate : checkForUpdate}
                   >
                     {busy === "install-update"
@@ -442,7 +516,7 @@ export default function App() {
                           : "Check for updates"}
                   </button>
                 </div>
-                <p className="modal-footnote">RBX Tools v0.2.7 · Windows desktop edition</p>
+                <p className="modal-footnote">RBX Tools v{appVersion} · {desktop ? "Windows desktop edition" : "Browser preview · no system changes"}</p>
               </>
             ) : (
               <>
