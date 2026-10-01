@@ -1,31 +1,30 @@
 {
   "name": "rbx-tools",
   "private": true,
-  "version": "0.2.12",
+  "version": "0.2.13",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build-frontend.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
-    "icons": "tauri icon assets/app-icon.png",
+    "icons": "node scripts/ensure-icons.mjs",
     "desktop": "npm run icons && tauri dev",
     "desktop:build": "npm run icons && tauri build",
     "postdesktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/copy-builds-to-onedrive.ps1",
-    "test": "vitest run"
+    "test": "vitest run && node --test scripts/check-build-cache.mjs"
   },
   "dependencies": {
+    "@fontsource/dm-sans": "^5.2.0",
+    "@fontsource/press-start-2p": "^5.2.0",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
-    "@fontsource/press-start-2p": "^5.2.0",
-    "@fontsource/dm-sans": "^5.2.0",
-    "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.8.0",
     "@tailwindcss/vite": "^4.1.0",
+    "@tauri-apps/cli": "^2.8.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",

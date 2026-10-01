@@ -8,6 +8,11 @@ on:
         required: true
         default: v0.2.7
         type: string
+      benchmark_only:
+        description: Build and test without publishing a GitHub Release
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -42,30 +47,23 @@ jobs:
         run: rustup default stable
 
       - name: Restore Rust build cache
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~\.cargo\registry
-            ~\.cargo\git
-            src-tauri\target
-          key: ${{ runner.os }}-rust-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-rust-
+          workspaces: src-tauri -> target
+          shared-key: windows-desktop
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Generate native app icons
-        run: npm run icons
+        run: npm ci --no-audit --no-fund
 
       - name: Test frontend
         run: npm test
 
-      - name: Test native code
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
       - name: Build Windows app and installer
         run: npm run desktop:build
+
+      - name: Test native code
+        # Reuse Tauri's release dependencies and embedded frontend before publishing.
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --features tauri/custom-protocol
 
       - name: Collect release files
         shell: pwsh
@@ -81,9 +79,13 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          BENCHMARK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark_only || false }}
         run: |
           $version = (Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
-          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+          if ($env:BENCHMARK_ONLY -eq "true") {
+            $tag = "v$version"
+            $publish = $false
+          } elseif ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
             $tag = "${{ inputs.tag }}"
             $publish = $true
           } elseif ($env:GITHUB_REF -like "refs/tags/v*") {
@@ -114,6 +116,7 @@ jobs:
           name: RBX-Tools-Windows-${{ github.run_number }}
           path: release/*
           if-no-files-found: error
+          compression-level: 1
 
       - name: Publish GitHub Release
         if: steps.release.outputs.publish == 'true'

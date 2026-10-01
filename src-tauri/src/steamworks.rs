@@ -52,6 +52,7 @@ impl Drop for Environment {
 }
 
 pub struct Client {
+    runtime_path: PathBuf,
     module: HMODULE,
     shutdown: Shutdown,
     steam_user: Interface,
@@ -66,14 +67,21 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn connect_runtime(runtime: &Path) -> Result<Self, String> {
-        unsafe { Self::load(runtime) }
-    }
-
-    pub fn connect(steam_executable: &Path) -> Result<Self, String> {
-        let runtimes = find_runtimes(steam_executable)?;
+    pub fn connect(
+        steam_executable: &Path,
+        preferred_runtime: Option<&Path>,
+    ) -> Result<Self, String> {
         let mut errors = Vec::new();
-        for runtime in runtimes {
+        if let Some(runtime) = preferred_runtime {
+            match unsafe { Self::load(runtime) } {
+                Ok(client) => return Ok(client),
+                Err(error) => errors.push(format!("{}: {error}", runtime.display())),
+            }
+        }
+        for runtime in find_runtimes(steam_executable)? {
+            if preferred_runtime == Some(runtime.as_path()) {
+                continue;
+            }
             match unsafe { Self::load(&runtime) } {
                 Ok(client) => return Ok(client),
                 Err(error) => errors.push(format!("{}: {error}", runtime.display())),
@@ -145,6 +153,7 @@ impl Client {
         }
 
         Ok(Self {
+            runtime_path: path.to_path_buf(),
             module,
             shutdown,
             steam_user,
@@ -157,6 +166,10 @@ impl Client {
             run_callbacks,
             _environment: environment,
         })
+    }
+
+    pub fn runtime_path(&self) -> &Path {
+        &self.runtime_path
     }
 
     pub fn is_logged_on(&self) -> bool {
@@ -210,6 +223,7 @@ impl Client {
     }
 }
 
+#[allow(dead_code)] // Also used by the standalone reconnect diagnostics.
 pub fn discover_runtime(steam_executable: &Path) -> Result<PathBuf, String> {
     find_runtimes(steam_executable)?
         .into_iter()

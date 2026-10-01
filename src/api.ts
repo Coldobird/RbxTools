@@ -66,6 +66,12 @@ export async function setBlocked(blocked: boolean): Promise<Status> {
   return invoke("set_blocked", { blocked });
 }
 
+export async function makeSpacewarPrivate(): Promise<string> {
+  if (!desktop)
+    throw new Error("Spacewar privacy is available in the installed desktop app.");
+  return invoke("make_spacewar_private");
+}
+
 export async function getLocalUpdate(): Promise<LocalUpdateCheck> {
   return desktop
     ? invoke("get_local_update")

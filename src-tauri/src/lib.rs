@@ -1,5 +1,6 @@
 mod local_update;
 mod network;
+mod spacewar_privacy;
 mod steam;
 mod steamworks;
 
@@ -28,6 +29,8 @@ struct AppState {
     network_revision: AtomicU64,
     reconnect_assisting: AtomicBool,
     restarting: AtomicBool,
+    privacy_changing: AtomicBool,
+    elevated: bool,
     config_file: PathBuf,
 }
 
@@ -42,11 +45,7 @@ struct Status {
 }
 
 fn status(state: &AppState) -> Result<Status, String> {
-    let path = resolve_steam_path(state)?;
-    let running = match path.as_ref() {
-        Some(path) => !steam::matching_processes(Path::new(path))?.is_empty(),
-        None => false,
-    };
+    let (path, running) = inspect_steam(state)?;
     Ok(Status {
         steam_path: path.clone(),
         target_path: path,
@@ -56,63 +55,68 @@ fn status(state: &AppState) -> Result<Status, String> {
             .lock()
             .map_err(|_| "Network state unavailable")?
             .is_some(),
-        elevated: steam::is_elevated(),
+        elevated: state.elevated,
     })
 }
 
 fn resolve_steam_path(state: &AppState) -> Result<Option<String>, String> {
-    let saved = state
+    inspect_steam(state).map(|(path, _)| path)
+}
+
+fn inspect_steam(state: &AppState) -> Result<(Option<String>, bool), String> {
+    let mut preferences = state
         .preferences
         .lock()
-        .map_err(|_| "Settings unavailable")?
-        .steam_path
-        .clone();
-    let resolved = steam::detect()
-        .map(|path| path.to_string_lossy().to_string())
-        .or_else(|| {
-            saved
-                .clone()
-                .filter(|path| steam::validate_path(Path::new(path)).is_ok())
-        });
+        .map_err(|_| "Settings unavailable")?;
+    let (resolved, running) = steam::inspect(preferences.steam_path.as_deref())?;
+    let resolved = resolved.map(|path| path.to_string_lossy().into_owned());
 
-    if resolved != saved {
-        let preferences = Preferences {
+    if resolved != preferences.steam_path {
+        let next = Preferences {
             steam_path: resolved.clone(),
         };
-        let serialized = serde_json::to_vec_pretty(&preferences).map_err(|e| e.to_string())?;
+        let serialized = serde_json::to_vec_pretty(&next).map_err(|e| e.to_string())?;
         std::fs::write(&state.config_file, serialized)
             .map_err(|e| format!("Could not save detected Steam location: {e}"))?;
-        *state
-            .preferences
-            .lock()
-            .map_err(|_| "Settings unavailable")? = preferences;
+        *preferences = next;
     }
-    Ok(resolved)
+    Ok((resolved, running))
+}
+
+async fn run_blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("Background task failed: {e}"))?
 }
 
 #[tauri::command]
-fn get_status(state: tauri::State<'_, AppState>) -> Result<Status, String> {
-    status(&state)
+async fn get_status(app: tauri::AppHandle) -> Result<Status, String> {
+    run_blocking(move || status(&app.state::<AppState>())).await
 }
 
 #[tauri::command]
-fn get_local_update() -> Result<local_update::UpdateCheck, String> {
-    local_update::check()
+async fn get_local_update() -> Result<local_update::UpdateCheck, String> {
+    run_blocking(local_update::check).await
 }
 
 #[tauri::command]
-fn install_local_update(app: tauri::AppHandle) -> Result<(), String> {
-    local_update::install()?;
+async fn install_local_update(app: tauri::AppHandle) -> Result<(), String> {
+    run_blocking(local_update::install).await?;
     app.exit(0);
     Ok(())
 }
 
 #[tauri::command]
-fn set_path(
-    kind: String,
-    path: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<Status, String> {
+async fn set_path(kind: String, path: String, app: tauri::AppHandle) -> Result<Status, String> {
+    run_blocking(move || update_path(&kind, Path::new(&path), &app.state::<AppState>())).await
+}
+
+fn update_path(kind: &str, path: &Path, state: &AppState) -> Result<Status, String> {
+    if state.privacy_changing.load(Ordering::SeqCst) {
+        return Err("Finish or close Steam's privacy sign-in window first.".into());
+    }
     if kind != "steam" && kind != "target" {
         return Err("Unknown setting".into());
     }
@@ -126,7 +130,7 @@ fn set_path(
     if network.is_some() {
         return Err("Restore network access before changing the Steam location.".into());
     }
-    let path = steam::validate_path(Path::new(&path))?;
+    let path = steam::validate_path(path)?;
     let preferences = Preferences {
         steam_path: Some(path.to_string_lossy().to_string()),
     };
@@ -138,15 +142,22 @@ fn set_path(
         .lock()
         .map_err(|_| "Settings unavailable")? = preferences;
     drop(network);
-    status(&state)
+    status(state)
 }
 
 #[tauri::command]
-fn set_blocked(
+async fn set_blocked(blocked: bool, app: tauri::AppHandle) -> Result<Status, String> {
+    run_blocking(move || update_blocked(blocked, &app.state::<AppState>(), app.clone())).await
+}
+
+fn update_blocked(
     blocked: bool,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
     app: tauri::AppHandle,
 ) -> Result<Status, String> {
+    if state.privacy_changing.load(Ordering::SeqCst) {
+        return Err("Finish or close Steam's privacy sign-in window first.".into());
+    }
     let mut network = state
         .network
         .lock()
@@ -159,11 +170,8 @@ fn set_blocked(
             .blocked_at
             .lock()
             .map_err(|_| "Network timing unavailable")? = Some(Instant::now());
-        *state
-            .steamworks_runtime
-            .lock()
-            .map_err(|_| "Steamworks runtime state unavailable")? =
-            steamworks::discover_runtime(&path).ok();
+        // Runtime discovery walks installed games. Defer it to the reconnect
+        // worker, which is only needed after a long pause.
         state.network_revision.fetch_add(1, Ordering::SeqCst);
     } else if !blocked {
         // Keep ownership if an explicit close fails so the UI never falsely says restored.
@@ -204,7 +212,8 @@ fn start_reconnect_assist(
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(3));
         let state = app.state::<AppState>();
-        if state.network_revision.load(Ordering::SeqCst) != revision
+        if state.privacy_changing.load(Ordering::SeqCst)
+            || state.network_revision.load(Ordering::SeqCst) != revision
             || state
                 .network
                 .lock()
@@ -221,20 +230,19 @@ fn start_reconnect_assist(
         }
         let _reset = Reset(&state.reconnect_assisting);
         let still_current = || {
-            state.network_revision.load(Ordering::SeqCst) == revision
+            !state.privacy_changing.load(Ordering::SeqCst)
+                && state.network_revision.load(Ordering::SeqCst) == revision
                 && state.network.lock().is_ok_and(|network| network.is_none())
         };
         if !still_current() {
             return;
         }
-        let client = match runtime.as_deref() {
-            Some(runtime) => steamworks::Client::connect_runtime(runtime)
-                .or_else(|_| steamworks::Client::connect(&steam_path)),
-            None => steamworks::Client::connect(&steam_path),
-        };
-        let Ok(client) = client else {
+        let Ok(client) = steamworks::Client::connect(&steam_path, runtime.as_deref()) else {
             return;
         };
+        if let Ok(mut runtime) = state.steamworks_runtime.lock() {
+            *runtime = Some(client.runtime_path().to_path_buf());
+        }
         if client.is_logged_on() || !still_current() {
             return;
         }
@@ -254,6 +262,9 @@ fn start_reconnect_assist(
 async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        if state.privacy_changing.load(Ordering::SeqCst) {
+            return Err("Finish or close Steam's privacy sign-in window first.".into());
+        }
         if state.restarting.swap(true, Ordering::SeqCst) {
             return Err("Steam is already restarting.".into());
         }
@@ -269,6 +280,43 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
     })
     .await
     .map_err(|e| format!("Restart failed: {e}"))?
+}
+
+#[tauri::command]
+async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    if state.privacy_changing.swap(true, Ordering::SeqCst) {
+        return Err("Spacewar privacy is already being checked.".into());
+    }
+    struct Reset<'a>(&'a AtomicBool);
+    impl Drop for Reset<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    let _reset = Reset(&state.privacy_changing);
+    let steam_id = (|| -> Result<String, String> {
+        if state.restarting.load(Ordering::SeqCst) {
+            return Err("Wait for Steam to finish restarting.".into());
+        }
+        if state.reconnect_assisting.load(Ordering::SeqCst) {
+            return Err("Wait for Steam's reconnect check to finish.".into());
+        }
+        let network = state
+            .network
+            .lock()
+            .map_err(|_| "Network state unavailable")?;
+        if network.is_some() {
+            return Err("Restore Steam's network access before changing game privacy.".into());
+        }
+        let (_, running) = inspect_steam(&state)?;
+        if !running {
+            return Err("Open Steam and sign in before making Spacewar private.".into());
+        }
+        steam::active_steam_id()
+            .ok_or_else(|| "Sign in to Steam before making Spacewar private.".into())
+    })()?;
+    spacewar_privacy::make_private(app.clone(), steam_id).await
 }
 
 pub fn run() {
@@ -303,6 +351,8 @@ pub fn run() {
                 network_revision: AtomicU64::new(0),
                 reconnect_assisting: AtomicBool::new(false),
                 restarting: AtomicBool::new(false),
+                privacy_changing: AtomicBool::new(false),
+                elevated: steam::is_elevated(),
                 config_file,
             });
             Ok(())
@@ -313,7 +363,8 @@ pub fn run() {
             install_local_update,
             set_path,
             set_blocked,
-            restart_steam
+            restart_steam,
+            make_spacewar_private
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");

@@ -14,7 +14,7 @@ use windows_sys::Win32::{
             TH32CS_SNAPPROCESS,
         },
         Registry::{
-            RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+            RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
             RRF_SUBKEY_WOW6432KEY,
         },
         Threading::{
@@ -99,13 +99,20 @@ fn registry_string(root: HKEY, key: &str, value: &str, flags: u32) -> Option<Str
 }
 
 pub fn detect() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    // A running process is the strongest source for custom Steam installs.
-    if let Ok(paths) = running_steam_paths() {
-        candidates.extend(paths);
+    detect_from_running(&running_steam_paths().unwrap_or_default())
+}
+
+fn detect_from_running(running: &[PathBuf]) -> Option<PathBuf> {
+    // Resolve sources lazily: a running custom install needs no registry reads.
+    for path in running {
+        if let Ok(path) = validate_path(path) {
+            return Some(path);
+        }
     }
     if let Some(path) = registry_string(HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamExe", 0) {
-        candidates.push(PathBuf::from(path));
+        if let Ok(path) = validate_path(Path::new(&path)) {
+            return Some(path);
+        }
     }
     if let Some(path) = registry_string(
         HKEY_LOCAL_MACHINE,
@@ -113,35 +120,60 @@ pub fn detect() -> Option<PathBuf> {
         "InstallPath",
         RRF_SUBKEY_WOW6432KEY,
     ) {
-        candidates.push(PathBuf::from(path).join("steam.exe"));
+        if let Ok(path) = validate_path(&PathBuf::from(path).join("steam.exe")) {
+            return Some(path);
+        }
     }
     for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
         if let Some(path) = std::env::var_os(variable) {
-            candidates.push(PathBuf::from(path).join("Steam").join("steam.exe"));
+            if let Ok(path) = validate_path(&PathBuf::from(path).join("Steam").join("steam.exe")) {
+                return Some(path);
+            }
         }
     }
-    candidates.into_iter().find_map(|p| validate_path(&p).ok())
+    None
+}
+
+// Detection and status share one process snapshot, including exact-path matching.
+pub fn inspect(saved: Option<&str>) -> Result<(Option<PathBuf>, bool), String> {
+    let running = running_steam_paths()?;
+    let resolved = detect_from_running(&running)
+        .or_else(|| saved.and_then(|path| validate_path(Path::new(path)).ok()));
+    let is_running = resolved
+        .as_ref()
+        .is_some_and(|path| running.iter().any(|candidate| same_path(candidate, path)));
+    Ok((resolved, is_running))
 }
 
 fn running_steam_paths() -> Result<Vec<PathBuf>, String> {
+    let mut paths = Vec::new();
+    visit_steam_processes(|_, path| paths.push(path.to_path_buf()))?;
+    Ok(paths)
+}
+
+fn is_steam_process(name: &[u16]) -> bool {
+    const EXPECTED: &[u8] = b"steam.exe";
+    name.len() > EXPECTED.len()
+        && name[EXPECTED.len()] == 0
+        && name[..EXPECTED.len()]
+            .iter()
+            .zip(EXPECTED)
+            .all(|(&character, &expected)| {
+                character <= 127 && (character as u8).eq_ignore_ascii_case(&expected)
+            })
+}
+
+fn visit_steam_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String> {
     unsafe {
         let snapshot = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
         if snapshot.0 == INVALID_HANDLE_VALUE {
-            return Err(last_error("Could not inspect Steam installations"));
+            return Err(last_error("Could not inspect Steam status"));
         }
         let mut entry: PROCESSENTRY32W = std::mem::zeroed();
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         let mut running = Process32FirstW(snapshot.0, &mut entry);
-        let mut paths = Vec::new();
         while running != 0 {
-            let name = String::from_utf16_lossy(
-                &entry.szExeFile[..entry
-                    .szExeFile
-                    .iter()
-                    .position(|value| *value == 0)
-                    .unwrap_or(entry.szExeFile.len())],
-            );
-            if name.eq_ignore_ascii_case("steam.exe") {
+            if is_steam_process(&entry.szExeFile) {
                 let process = Handle(OpenProcess(
                     PROCESS_QUERY_LIMITED_INFORMATION,
                     0,
@@ -149,13 +181,13 @@ fn running_steam_paths() -> Result<Vec<PathBuf>, String> {
                 ));
                 if !process.0.is_null() {
                     if let Some(path) = process_path(process.0) {
-                        paths.push(path);
+                        visit(entry.th32ProcessID, &path);
                     }
                 }
             }
             running = Process32NextW(snapshot.0, &mut entry);
         }
-        Ok(paths)
+        Ok(())
     }
 }
 
@@ -177,39 +209,13 @@ fn same_path(left: &Path, right: &Path) -> bool {
 }
 
 pub fn matching_processes(path: &Path) -> Result<Vec<u32>, String> {
-    unsafe {
-        let snapshot = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
-        if snapshot.0 == INVALID_HANDLE_VALUE {
-            return Err(last_error("Could not inspect Steam status"));
+    let mut found = Vec::new();
+    visit_steam_processes(|pid, candidate| {
+        if same_path(candidate, path) {
+            found.push(pid);
         }
-        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-        let mut running = Process32FirstW(snapshot.0, &mut entry);
-        let mut found = Vec::new();
-        while running != 0 {
-            let name = String::from_utf16_lossy(
-                &entry.szExeFile[..entry
-                    .szExeFile
-                    .iter()
-                    .position(|v| *v == 0)
-                    .unwrap_or(entry.szExeFile.len())],
-            );
-            if name.eq_ignore_ascii_case("steam.exe") {
-                let process = Handle(OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION,
-                    0,
-                    entry.th32ProcessID,
-                ));
-                if !process.0.is_null()
-                    && process_path(process.0).is_some_and(|candidate| same_path(&candidate, path))
-                {
-                    found.push(entry.th32ProcessID);
-                }
-            }
-            running = Process32NextW(snapshot.0, &mut entry);
-        }
-        Ok(found)
-    }
+    })?;
+    Ok(found)
 }
 
 pub fn is_elevated() -> bool {
@@ -262,6 +268,25 @@ fn launch(path: &Path, arguments: &[&str]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+pub fn active_steam_id() -> Option<String> {
+    // Public account identifier only: never read Steam's credential storage or
+    // initialize a game just to determine which account is active.
+    let mut account_id = 0u32;
+    let mut size = std::mem::size_of_val(&account_id) as u32;
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            wide(r"Software\Valve\Steam\ActiveProcess").as_ptr(),
+            wide("ActiveUser").as_ptr(),
+            RRF_RT_REG_DWORD,
+            ptr::null_mut(),
+            (&mut account_id as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    (result == 0 && account_id != 0).then(|| (76561197960265728u64 + u64::from(account_id)).to_string())
 }
 
 pub fn restart(path: &Path, force: bool) -> Result<String, String> {
@@ -342,5 +367,15 @@ mod tests {
             Path::new(r"C:\Steam\steam.exe"),
             Path::new(r"C:\Other\steam.exe")
         ));
+    }
+
+    #[test]
+    fn process_name_filter_only_accepts_exact_steam_name() {
+        assert!(is_steam_process(&wide("steam.exe")));
+        assert!(is_steam_process(&wide("STEAM.EXE")));
+        assert!(!is_steam_process(&wide("steam.exe.bak")));
+        assert!(!is_steam_process(&wide("steamwebhelper.exe")));
+        assert!(!is_steam_process(&wide("ſteam.exe")));
+        assert!(!is_steam_process(&[]));
     }
 }

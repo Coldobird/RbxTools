@@ -17,11 +17,13 @@ import {
 } from "./PixelIcons";
 import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
+import { sameStatus, startStatusPolling } from "./statusPolling";
 import {
   desktop,
   getLocalUpdate,
   getStatus,
   installLocalUpdate,
+  makeSpacewarPrivate,
   type LocalUpdate,
   pickExecutable,
   restartSteam,
@@ -83,7 +85,7 @@ export default function App() {
     : restartPhase === "restarting"
       ? { label: busy === "restart" ? "Restarting Steam" : "Confirming Steam startup", className: "busy" }
       : busy || loading
-        ? { label: busy === "network" ? "Changing network state" : "Checking Steam", className: "busy" }
+        ? { label: busy === "network" ? "Changing network state" : busy === "privacy" ? "Setting Spacewar privacy" : "Checking Steam", className: "busy" }
       : status.blocked
         ? { label: "Steam network blocked", className: "blocked" }
         : networkPhase === "connected"
@@ -104,24 +106,26 @@ export default function App() {
       setLoading(false);
       return;
     }
-    let active = true;
-    const refresh = async () => {
-      if (busyRef.current) return;
-      const generation = statusGeneration.current;
-      try {
-        const next = await getStatus();
-        if (active && generation === statusGeneration.current && !busyRef.current) setStatus(next);
-      } catch (err) {
-        if (active) setError(String(err));
-      } finally {
-        if (active) setLoading(false);
-      }
+    const poller = startStatusPolling({
+      read: getStatus,
+      canPoll: () => !busyRef.current && !document.hidden,
+      generation: () => statusGeneration.current,
+      onStatus(next) {
+        setStatus((current) => sameStatus(current, next) ? current : next);
+        setLoading(false);
+      },
+      onError(err) {
+        setError(String(err));
+        setLoading(false);
+      },
+    });
+    const onVisibilityChange = () => {
+      if (!document.hidden) void poller.refresh();
     };
-    void refresh();
-    const timer = window.setInterval(refresh, 3000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
-      active = false;
-      window.clearInterval(timer);
+      poller.stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
@@ -247,6 +251,17 @@ export default function App() {
         setNetworkPhase("connected");
         networkTimer.current = window.setTimeout(() => setNetworkPhase(null), 5000);
       }
+    });
+  }
+
+  function openPrivacy() {
+    void action("privacy", async () => {
+      if (!desktop) {
+        await previewDelay();
+        setNotice("Preview only. The desktop app signs in to Steam and automatically sets and verifies Spacewar privacy. No account was changed.");
+        return;
+      }
+      setNotice(await makeSpacewarPrivate());
     });
   }
 
@@ -494,6 +509,25 @@ export default function App() {
                     <p className="path-label">{status.steamPath ?? "Not detected yet"}</p>
                   </div>
                   <button className="small-button" disabled={!!busy} onClick={chooseSteam}>Browse</button>
+                </div>
+                <div className="setting-row" role="group" aria-labelledby="spacewar-privacy-title">
+                  <div>
+                    <strong id="spacewar-privacy-title">Spacewar privacy</strong>
+                    <p>
+                      {status.blocked
+                        ? "Restore Steam’s network access first."
+                        : desktop && !status.steamRunning
+                          ? "Open Steam and sign in first."
+                          : "Automatically hide its status from friends."}
+                    </p>
+                  </div>
+                  <button
+                    className="small-button"
+                    disabled={!!busy || loading || status.blocked || (desktop && !status.steamRunning)}
+                    onClick={openPrivacy}
+                  >
+                    {busy === "privacy" ? "Waiting for Steam…" : "Make Spacewar private"}
+                  </button>
                 </div>
                 <div className="setting-row">
                   <div>

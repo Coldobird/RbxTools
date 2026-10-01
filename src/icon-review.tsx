@@ -1,8 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fontsource/press-start-2p";
-import "@fontsource/dm-sans/400.css";
-import "@fontsource/dm-sans/600.css";
+import "./fonts.css";
 import {
   ArrowLeft,
   Check,

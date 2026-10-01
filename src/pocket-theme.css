@@ -63,7 +63,7 @@
   z-index: 0;
   inset: auto 0 0 226px;
   height: min(78vh, 820px);
-  background: url('../assets/pocket-landscape.png') center bottom / cover no-repeat;
+  background: url('../assets/pocket-landscape.webp') center bottom / cover no-repeat;
   pointer-events: none;
   image-rendering: pixelated;
   mask-image: linear-gradient(transparent, #000 28%);
@@ -146,6 +146,7 @@ button:disabled { opacity: .62; }
 .setting-row p, .modal-intro, .modal-footnote { color: #e2b6aa; }
 .setting-row { border-color: #9b5661; }
 .small-button { border-radius: 0; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
+
 .modal-close { color: #ffcfbc; }
 .amber-button { background: #97654a; border-color: #f3c08b; color: #fff1d4; }
 .primary-button.amber-button:not(:disabled):hover { background: #a36d50; color: #fff5df; }
