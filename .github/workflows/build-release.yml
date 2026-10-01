@@ -58,21 +58,18 @@ jobs:
       - name: Test frontend
         run: npm test
 
-      - name: Build Windows app and installer
-        run: npm run desktop:build
+      - name: Build Windows portable executable
+        run: npm run desktop:build:portable
 
       - name: Test native code
         # Reuse Tauri's release dependencies and embedded frontend before publishing.
         run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --features tauri/custom-protocol
 
-      - name: Collect release files
+      - name: Collect portable executable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item -LiteralPath "src-tauri/target/release/rbx-tools.exe" -Destination "release/RBX-Tools.exe"
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
-          if (-not $installer) { throw "Tauri did not produce an NSIS installer." }
-          Copy-Item -LiteralPath $installer.FullName -Destination "release/RBX-Tools-Setup.exe"
 
       - name: Determine release target
         id: release
@@ -114,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RBX-Tools-Windows-${{ github.run_number }}
-          path: release/*
+          path: release/RBX-Tools.exe
           if-no-files-found: error
           compression-level: 1
 
@@ -125,7 +122,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          $files = @("release/RBX-Tools.exe", "release/RBX-Tools-Setup.exe")
+          $files = @("release/RBX-Tools.exe")
           $headers = @{
             Accept = "application/vnd.github+json"
             Authorization = "Bearer $env:GH_TOKEN"

@@ -1,7 +1,7 @@
 {
   "name": "rbx-tools",
   "private": true,
-  "version": "0.2.13",
+  "version": "0.2.14",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -11,6 +11,7 @@
     "icons": "node scripts/ensure-icons.mjs",
     "desktop": "npm run icons && tauri dev",
     "desktop:build": "npm run icons && tauri build",
+    "desktop:build:portable": "npm run icons && tauri build --no-bundle",
     "postdesktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/copy-builds-to-onedrive.ps1",
     "test": "vitest run && node --test scripts/check-build-cache.mjs"
   },

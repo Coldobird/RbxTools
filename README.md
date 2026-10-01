@@ -83,6 +83,16 @@ Rust on this machine was installed to `%USERPROFILE%\.cargo\bin` without changin
 
 ## Build and share
 
+To build only the portable executable:
+
+```powershell
+npm run desktop:build:portable
+```
+
+This creates `src-tauri/target/release/rbx-tools.exe` without packaging an installer or publishing to OneDrive. GitHub Actions uses this command and uploads only `RBX-Tools.exe` to its workflow artifact and GitHub Release. New versions still receive an automatic release on their first successful `main` build; ordinary commits upload an artifact without creating another release.
+
+To build the executable and installer for the shared OneDrive updater:
+
 ```powershell
 npm run desktop:build
 ```
