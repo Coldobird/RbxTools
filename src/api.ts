@@ -9,14 +9,12 @@ export interface Status {
   elevated: boolean;
 }
 
-export interface LocalUpdate {
+export interface AvailableUpdate {
   version: string;
-  notes: string;
 }
 
-export interface LocalUpdateCheck {
-  sharedBuildsAvailable: boolean;
-  update: LocalUpdate | null;
+export interface UpdateCheck {
+  update: AvailableUpdate | null;
 }
 
 export const desktop = isTauri();
@@ -72,15 +70,15 @@ export async function makeSpacewarPrivate(): Promise<string> {
   return invoke("make_spacewar_private");
 }
 
-export async function getLocalUpdate(): Promise<LocalUpdateCheck> {
+export async function getUpdate(): Promise<UpdateCheck> {
   return desktop
-    ? invoke("get_local_update")
-    : { sharedBuildsAvailable: false, update: null };
+    ? invoke("get_github_update")
+    : { update: null };
 }
 
-export async function installLocalUpdate(): Promise<void> {
-  if (!desktop) throw new Error("Updates are available in the installed desktop app.");
-  return invoke("install_local_update");
+export async function installUpdate(): Promise<void> {
+  if (!desktop) throw new Error("Updates are available in the desktop app.");
+  return invoke("install_github_update");
 }
 
 export function fileName(path: string | null): string {

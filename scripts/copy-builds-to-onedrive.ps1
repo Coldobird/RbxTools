@@ -36,6 +36,6 @@ $manifest = [ordered]@{
     notes = "Shared OneDrive build"
     publishedAt = (Get-Date).ToUniversalTime().ToString("o")
 } | ConvertTo-Json
-Set-Content -LiteralPath (Join-Path $sharedBuildDirectory "latest.json") -Value $manifest -Encoding utf8
+[IO.File]::WriteAllText((Join-Path $sharedBuildDirectory "latest.json"), $manifest, [Text.UTF8Encoding]::new($false))
 
 Write-Host "Published executable, installer, and update manifest to: $sharedBuildDirectory"

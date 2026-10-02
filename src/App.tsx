@@ -20,11 +20,11 @@ import tauriConfig from "../src-tauri/tauri.conf.json";
 import { sameStatus, startStatusPolling } from "./statusPolling";
 import {
   desktop,
-  getLocalUpdate,
+  getUpdate,
   getStatus,
-  installLocalUpdate,
+  installUpdate,
   makeSpacewarPrivate,
-  type LocalUpdate,
+  type AvailableUpdate,
   pickExecutable,
   restartSteam,
   setBlocked,
@@ -60,7 +60,8 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [localUpdate, setLocalUpdate] = useState<LocalUpdate | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | null>(null);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
   const [networkPhase, setNetworkPhase] = useState<"reconnecting" | "connected" | null>(null);
@@ -144,14 +145,23 @@ export default function App() {
   useEffect(() => {
     if (!desktop) return;
     let active = true;
-    void getLocalUpdate()
-      .then((result) => {
-        if (!active) return;
-        setLocalUpdate(result.update);
-      })
-      .catch(() => undefined);
+    const check = () => {
+      void getUpdate()
+        .then((result) => {
+          if (!active) return;
+          setAvailableUpdate(result.update);
+          setUpdateError(null);
+          if (result.update) setNotice(`RBX Tools v${result.update.version} is available. Open Settings to update.`);
+        })
+        .catch((err) => {
+          if (active) setUpdateError(String(err));
+        });
+    };
+    check();
+    const timer = window.setInterval(check, 6 * 60 * 60 * 1000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -272,20 +282,28 @@ export default function App() {
         setNotice("Update check complete (preview only). No update was installed.");
         return;
       }
-      const result = await getLocalUpdate();
-      setLocalUpdate(result.update);
-      const message = !result.sharedBuildsAvailable
-        ? "Shared updates are not enabled for this copy."
-        : result.update
+      try {
+        const result = await getUpdate();
+        setAvailableUpdate(result.update);
+        setUpdateError(null);
+        setNotice(result.update
           ? `Version ${result.update.version} is ready to install.`
-          : "RBX Tools is up to date.";
-      setNotice(message);
+          : "RBX Tools is up to date.");
+      } catch (err) {
+        setUpdateError(String(err));
+        throw err;
+      }
     });
   }
 
-  function installSharedUpdate() {
+  function installGithubUpdate() {
     void action("install-update", async () => {
-      await installLocalUpdate();
+      try {
+        await installUpdate();
+      } catch (err) {
+        setUpdateError(String(err));
+        throw err;
+      }
     });
   }
 
@@ -333,7 +351,7 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setModal("settings")}>
-            <Settings2 size={17} /> Settings
+            <Settings2 size={17} /> {availableUpdate ? "Settings · Update ready" : "Settings"}
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
@@ -531,22 +549,22 @@ export default function App() {
                 </div>
                 <div className="setting-row">
                   <div>
-                    <strong>{localUpdate ? `Update v${localUpdate.version} ready` : "Updates"}</strong>
-                    {localUpdate && (
-                      <p>{localUpdate.notes || "A newer shared build is ready."}</p>
-                    )}
+                    <strong>{availableUpdate ? `Update v${availableUpdate.version} ready` : "Updates"}</strong>
+                    <p>{updateError ?? (availableUpdate
+                      ? "Download from GitHub and restart to finish updating."
+                      : "Checks GitHub automatically when you open the app.")}</p>
                   </div>
                   <button
                     className="small-button"
                     disabled={!!busy}
-                    onClick={localUpdate ? installSharedUpdate : checkForUpdate}
+                    onClick={availableUpdate ? installGithubUpdate : checkForUpdate}
                   >
                     {busy === "install-update"
-                      ? "Starting…"
+                      ? "Downloading…"
                       : busy === "check-update"
                         ? "Checking…"
-                        : localUpdate
-                          ? "Install update"
+                        : availableUpdate
+                          ? "Update and restart"
                           : "Check for updates"}
                   </button>
                 </div>

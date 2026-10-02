@@ -14,6 +14,14 @@ The privacy action uses Valve's authenticated `AccountPrivateApps` web service, 
 
 The application requests administrator access on launch and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
 
+### GitHub updates
+
+The desktop app checks the latest stable release in `Coldobird/RbxTools` on startup and every six hours. Settings also provides **Check for updates** and **Update and restart**. Checks use GitHub's public release API without a token or OneDrive access. Connection and rate-limit errors appear in Settings.
+
+An update downloads only `RBX-Tools.exe`, verifies GitHub's SHA-256 digest, size, and Windows x64 executable header, then stages a helper beside the running app. The helper waits for the original process to exit, replaces that same executable (including renamed portable copies), and restarts it. The prior executable is restored if replacement or confirmed startup fails. Preferences stay in the existing per-user configuration folder. The portable build does not install WebView2; it uses the runtime already required by the running app.
+
+GitHub downloads that only contain the old OneDrive updater need one manual download of a release containing this GitHub updater. Subsequent updates can use the in-app button. Existing users with the shared OneDrive folder can also transition through the locally published installer. GitHub releases must include an uploaded `RBX-Tools.exe` with its SHA-256 digest; drafts, prereleases, older versions, and incomplete uploads are not installed.
+
 ### Restore on exit
 
 Network blocking uses Windows Filtering Platform (WFP) with a **dynamic session**. All four filters and their sublayer are owned by that session. Normal exit closes the session; Windows also removes the session's objects after process termination, including a crash or forced close. No persistent Windows Firewall rules are created. Existing firewall policy is preserved.
@@ -91,7 +99,7 @@ npm run desktop:build:portable
 
 This creates `src-tauri/target/release/rbx-tools.exe` without packaging an installer or publishing to OneDrive. GitHub Actions uses this command and uploads only `RBX-Tools.exe` to its workflow artifact and GitHub Release. New versions still receive an automatic release on their first successful `main` build; ordinary commits upload an artifact without creating another release.
 
-To build the executable and installer for the shared OneDrive updater:
+To also build an installer and publish the local build files to OneDrive:
 
 ```powershell
 npm run desktop:build
@@ -99,7 +107,7 @@ npm run desktop:build
 
 Tauri generates the application at `src-tauri/target/release/rbx-tools.exe` and the installer under `src-tauri/target/release/bundle/nsis/`. The staging script also collects both into its cache's `release` directory as `RBX-Tools.exe` and `RBX-Tools-Setup.exe`.
 
-Share the installer with friends. It handles WebView2 setup if needed. The standalone executable requires WebView2 already installed. This first private build is unsigned, so its publisher is not verified by Windows.
+The locally built installer handles WebView2 setup if needed. GitHub distributes the portable executable, which requires WebView2 already installed. The desktop app updates from GitHub regardless of whether it was installed or launched as a portable copy.
 
 ## Checks
 
@@ -108,6 +116,12 @@ npm test
 npm run build
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml --lib
+```
+
+The native updater tests cover version and asset selection, corrupt downloads, rollback, and a Windows process test that replaces and restarts a renamed executable. To additionally check the real public GitHub download without installing or launching it:
+
+```powershell
+cargo test --release --manifest-path src-tauri/Cargo.toml --lib github_update::tests::live_github_download_verifies_without_installing -- --ignored --nocapture
 ```
 
 To check the actual WebView2 sign-in handoff without entering credentials or changing game privacy:

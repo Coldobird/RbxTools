@@ -1,4 +1,4 @@
-mod local_update;
+mod github_update;
 mod network;
 mod spacewar_privacy;
 mod steam;
@@ -30,6 +30,7 @@ struct AppState {
     reconnect_assisting: AtomicBool,
     restarting: AtomicBool,
     privacy_changing: AtomicBool,
+    updating: AtomicBool,
     elevated: bool,
     config_file: PathBuf,
 }
@@ -97,13 +98,30 @@ async fn get_status(app: tauri::AppHandle) -> Result<Status, String> {
 }
 
 #[tauri::command]
-async fn get_local_update() -> Result<local_update::UpdateCheck, String> {
-    run_blocking(local_update::check).await
+async fn get_github_update() -> Result<github_update::UpdateCheck, String> {
+    run_blocking(github_update::check).await
 }
 
 #[tauri::command]
-async fn install_local_update(app: tauri::AppHandle) -> Result<(), String> {
-    run_blocking(local_update::install).await?;
+async fn install_github_update(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    if state.updating.swap(true, Ordering::SeqCst) {
+        return Err("An update is already being installed.".into());
+    }
+    struct Reset<'a>(&'a AtomicBool);
+    impl Drop for Reset<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    let _reset = Reset(&state.updating);
+    if state.privacy_changing.load(Ordering::SeqCst)
+        || state.restarting.load(Ordering::SeqCst)
+        || state.reconnect_assisting.load(Ordering::SeqCst)
+    {
+        return Err("Wait for the current Steam action to finish before updating.".into());
+    }
+    run_blocking(github_update::install).await?;
     app.exit(0);
     Ok(())
 }
@@ -319,6 +337,10 @@ async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> 
     spacewar_privacy::make_private(app.clone(), steam_id).await
 }
 
+pub fn run_update_helper() -> Option<i32> {
+    github_update::run_helper_from_args()
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -352,6 +374,7 @@ pub fn run() {
                 reconnect_assisting: AtomicBool::new(false),
                 restarting: AtomicBool::new(false),
                 privacy_changing: AtomicBool::new(false),
+                updating: AtomicBool::new(false),
                 elevated: steam::is_elevated(),
                 config_file,
             });
@@ -359,8 +382,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
-            get_local_update,
-            install_local_update,
+            get_github_update,
+            install_github_update,
             set_path,
             set_blocked,
             restart_steam,
@@ -369,6 +392,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");
     app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::Ready) {
+            github_update::complete_startup();
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             if let Some(state) = app.try_state::<AppState>() {
                 if let Ok(mut network) = state.network.lock() {
