@@ -19,6 +19,7 @@ import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
 import { sameStatus, startStatusPolling } from "./statusPolling";
 import { connectionLabel } from "./steamStatus";
+import { isUiTestActive, setUiTestActive, testSteamStates, testSteamStatus, testUpdateVersion, type TestSteamState } from "./uiTestView";
 import {
   desktop,
   getUpdate,
@@ -56,6 +57,10 @@ function StatusIcon({ state, label }: { state: IconState; label: string }) {
 
 
 export default function App() {
+  const [testView, setTestView] = useState(isUiTestActive);
+  const [testPanelOpen, setTestPanelOpen] = useState(true);
+  const [testSteamState, setTestSteamState] = useState<TestSteamState>("online");
+  const liveDesktop = desktop && !testView;
   const [page, setPage] = useState<Page>("library");
   const [status, setStatus] = useState(initialStatus);
   const [loading, setLoading] = useState(true);
@@ -64,6 +69,7 @@ export default function App() {
   const [notice, setNotice] = useState<{ message: string; update: boolean } | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateFeedback, setUpdateFeedback] = useState<string | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | "update" | null>(null);
   const [startupUpdatePending, setStartupUpdatePending] = useState(false);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
@@ -106,8 +112,43 @@ export default function App() {
     setNotice({ message, update });
   }
 
+  function toggleTestView() {
+    if (busyRef.current) return;
+    setUiTestActive(!testView);
+    setTestView(!testView);
+    setTestPanelOpen(true);
+  }
+
   useEffect(() => {
-    if (!desktop) {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.code === "KeyT") {
+        event.preventDefault();
+        toggleTestView();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [testView]);
+
+  useEffect(() => {
+    if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
+    setRestartPhase(null);
+    setModalState(null);
+    setStartupUpdatePending(false);
+    setBusy(null);
+    setError(null);
+    setNotice(null);
+    setUpdateError(null);
+    setUpdateFeedback(null);
+    setAvailableUpdate(testView ? { version: testUpdateVersion } : null);
+    setStatus(testView ? testSteamStatus("online") : initialStatus);
+    setTestSteamState("online");
+    setPage("library");
+    setLoading(!testView && desktop);
+  }, [testView]);
+
+  useEffect(() => {
+    if (!liveDesktop) {
       setLoading(false);
       return;
     }
@@ -133,26 +174,26 @@ export default function App() {
       poller.stop();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [testView]);
 
   useEffect(() => {
-    if (!error) return;
+    if (!error || testView) return;
     const timer = window.setTimeout(() => setError(null), 8000);
     return () => window.clearTimeout(timer);
-  }, [error]);
+  }, [error, testView]);
 
   useEffect(() => {
     if (status.reconnectError) setError(status.reconnectError);
   }, [status.reconnectError]);
 
   useEffect(() => {
-    if (!notice || notice.update) return;
+    if (!notice || notice.update || testView) return;
     const timer = window.setTimeout(() => setNotice(null), 5000);
     return () => window.clearTimeout(timer);
-  }, [notice]);
+  }, [notice, testView]);
 
   useEffect(() => {
-    if (!desktop) return;
+    if (!liveDesktop) return;
     let active = true;
     const check = (startup: boolean) => {
       void getUpdate()
@@ -160,9 +201,10 @@ export default function App() {
           if (!active) return;
           setAvailableUpdate(result.update);
           setUpdateError(null);
+          setUpdateFeedback(null);
           if (result.update) {
             if (startup) setStartupUpdatePending(true);
-            else showNotice(`RBX Tools v${result.update.version} is available.`, true);
+            else if (!busyRef.current) showNotice(`RBX Tools v${result.update.version} is available.`, true);
           }
         })
         .catch((err) => {
@@ -175,7 +217,7 @@ export default function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [testView]);
 
   useEffect(() => {
     if (!startupUpdatePending || modal || busy) return;
@@ -190,6 +232,7 @@ export default function App() {
     if (!modal) return;
     const dialog = dialogRef.current;
     const trapFocus = (event: KeyboardEvent) => {
+      if (testView && event.target instanceof Element && event.target.closest(".ui-test-panel")) return;
       if (event.key !== "Tab" || !dialog) return;
       const controls = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')];
       const first = controls[0];
@@ -207,7 +250,7 @@ export default function App() {
       document.removeEventListener("keydown", trapFocus);
       returnFocusRef.current?.focus();
     };
-  }, [modal]);
+  }, [modal, testView]);
 
   async function action(name: string, work: () => Promise<void>) {
     if (busyRef.current) return;
@@ -222,7 +265,7 @@ export default function App() {
       if (name === "restart") setRestartPhase(null);
       const message = String(err);
       if (message.includes("STEAM_STILL_RUNNING")) setModal("force");
-      else {
+      else if (name !== "check-update" && !(name === "install-update" && modal !== null)) {
         setError(message);
       }
     } finally {
@@ -237,12 +280,13 @@ export default function App() {
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
     setRestartPhase("restarting");
     void action("restart", async () => {
-      if (!desktop) {
+      if (!liveDesktop) {
         await previewDelay();
         setStatus((current) => ({ ...current, steamRunning: true, steamOnline: true, blocked: false }));
+        setTestSteamState("online");
         showNotice("Steam restarted (preview only). No process was changed.");
         setRestartPhase("running");
-        restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
+        if (!testView) restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
         return;
       }
       const message = await restartSteam(force);
@@ -256,10 +300,11 @@ export default function App() {
   function toggleNetwork() {
     if (busyRef.current) return;
     void action("network", async () => {
-      if (!desktop) {
+      if (!liveDesktop) {
         await previewDelay();
         const blocked = !status.blocked;
         setStatus((current) => ({ ...current, blocked, steamOnline: !blocked && current.steamRunning }));
+        setTestSteamState(blocked ? "blocked" : "online");
         showNotice(blocked
           ? "Steam network paused (preview only). No traffic was changed."
           : "Steam network restored (preview only). No traffic was changed.");
@@ -276,7 +321,7 @@ export default function App() {
 
   function openPrivacy() {
     void action("privacy", async () => {
-      if (!desktop) {
+      if (!liveDesktop) {
         await previewDelay();
         showNotice("Preview only. The desktop app signs in to Steam and automatically sets and verifies Spacewar privacy. No account was changed.");
         return;
@@ -287,18 +332,22 @@ export default function App() {
 
   function checkForUpdate() {
     void action("check-update", async () => {
-      if (!desktop) {
+      if (!liveDesktop) {
         await previewDelay();
-        showNotice("Update check complete (preview only). No update was installed.");
+        if (testView) {
+          setAvailableUpdate({ version: testUpdateVersion });
+          setUpdateError(null);
+          setUpdateFeedback(null);
+          return;
+        }
+        setUpdateFeedback("Update check complete (preview only). No update was installed.");
         return;
       }
       try {
         const result = await getUpdate();
         setAvailableUpdate(result.update);
         setUpdateError(null);
-        showNotice(result.update
-          ? `Version ${result.update.version} is ready to install.`
-          : "RBX Tools is up to date.", !!result.update);
+        setUpdateFeedback(result.update ? null : "RBX Tools is up to date.");
       } catch (err) {
         setUpdateError(String(err));
         throw err;
@@ -308,7 +357,15 @@ export default function App() {
 
   function installGithubUpdate() {
     void action("install-update", async () => {
+      setUpdateError(null);
+      setUpdateFeedback(null);
       try {
+        if (testView) {
+          await previewDelay();
+          setUpdateFeedback("Preview update complete. No files were changed.");
+          if (modal === "update") setModal(null);
+          return;
+        }
         await installUpdate();
       } catch (err) {
         setUpdateError(String(err));
@@ -319,7 +376,7 @@ export default function App() {
 
   function chooseSteam() {
     void action("path", async () => {
-      if (!desktop) {
+      if (!liveDesktop) {
         await previewDelay();
         setStatus((current) => ({ ...current, steamPath: previewSteamPath, targetPath: previewSteamPath }));
         showNotice("Demo steam.exe selected (preview only). No file was accessed.");
@@ -335,6 +392,60 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {testView && (
+        <aside className={`ui-test-panel ${testPanelOpen ? "" : "collapsed"}`} aria-label="UI test controls">
+          <div className="ui-test-heading">
+            <Preview size={17} />
+            <strong>UI test view</strong>
+            <button className="small-button" onClick={() => setTestPanelOpen(!testPanelOpen)}>{testPanelOpen ? "Hide controls" : "Show controls"}</button>
+          </div>
+          {testPanelOpen && (
+            <>
+              <p>Simulated actions only. Ctrl+Shift+T exits.</p>
+              <label>Page<select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
+              <label>Steam state<select aria-label="Steam state" value={testSteamState} onChange={(event) => {
+                const state = event.target.value as TestSteamState;
+                setTestSteamState(state);
+                setStatus(testSteamStatus(state));
+                setLoading(false);
+                setRestartPhase(null);
+              }}>{testSteamStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
+              <label>Toast<select aria-label="Toast" value={error && notice ? "stacked" : error ? "error" : notice ? notice.update ? "update" : "success" : "none"} onChange={(event) => {
+                const choice = event.target.value;
+                setError(choice === "error" || choice === "stacked" ? "Steam could not reconnect. Check your connection and try again." : null);
+                setNotice(null);
+                if (choice === "success") showNotice("Steam network access is restored.");
+                if (choice === "update" || choice === "stacked") {
+                  setAvailableUpdate({ version: testUpdateVersion });
+                  showNotice(`RBX Tools v${testUpdateVersion} is available.`, true);
+                }
+              }}><option value="none">None</option><option value="success">Success</option><option value="error">Error</option><option value="update">Update with button</option><option value="stacked">Error + update stack</option></select></label>
+              <label>Modal<select aria-label="Modal" value={modal ?? "none"} onChange={(event) => {
+                const choice = event.target.value as "settings" | "force" | "update" | "none";
+                if (choice === "update") setAvailableUpdate({ version: testUpdateVersion });
+                setModal(choice === "none" ? null : choice);
+              }}><option value="none">None</option><option value="settings">Settings</option><option value="update">Startup update</option><option value="force">Force restart confirmation</option></select></label>
+              <label>Busy state<select aria-label="Busy state" value={busy ?? (loading ? "status" : restartPhase === "restarting" ? "confirm-startup" : restartPhase === "running" ? "restart-complete" : "none")} onChange={(event) => {
+                const choice = event.target.value;
+                setBusy(["none", "status", "confirm-startup", "restart-complete"].includes(choice) ? null : choice);
+                setLoading(choice === "status");
+                setRestartPhase(choice === "restart" || choice === "confirm-startup" ? "restarting" : choice === "restart-complete" ? "running" : null);
+                if (choice === "restart-complete") {
+                  setStatus(testSteamStatus("online"));
+                  setTestSteamState("online");
+                }
+              }}><option value="none">Idle</option><option value="status">Initial Steam check</option><option value="restart">Restarting Steam</option><option value="confirm-startup">Confirming startup</option><option value="restart-complete">Restart complete</option><option value="network">Changing network</option><option value="privacy">Spacewar privacy</option><option value="check-update">Checking updates</option><option value="install-update">Downloading update</option></select></label>
+              <label>Update state<select aria-label="Update state" value={updateError ? "error" : availableUpdate ? "available" : "current"} onChange={(event) => {
+                const choice = event.target.value;
+                setAvailableUpdate(choice === "current" ? null : { version: testUpdateVersion });
+                setUpdateError(choice === "error" ? "GitHub could not be reached. Try again." : null);
+                setUpdateFeedback(choice === "current" ? "RBX Tools is up to date." : null);
+              }}><option value="available">Update available</option><option value="current">Up to date</option><option value="error">Update error</option></select></label>
+              <button className="small-button" onClick={toggleTestView}>Exit test view</button>
+            </>
+          )}
+        </aside>
+      )}
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-emblem"><img src={appIcon} alt="" /></span>
@@ -490,13 +601,13 @@ export default function App() {
         <div className="toast-stack">
           {error && (
             <div role="alert" className="toast error">
-              {desktop ? <CircleAlert size={17} /> : <Preview size={17} />}
+              {desktop || testView ? <CircleAlert size={17} /> : <Preview size={17} />}
               <span>{error}</span>
               <button aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button>
             </div>
           )}
           {notice && (
-            <div role="status" className="toast success">
+            <div role="status" className={notice.update ? "toast success update-notice" : "toast success"}>
               <Check size={17} />
               <span>{notice.message}</span>
               {notice.update && availableUpdate && (
@@ -540,14 +651,14 @@ export default function App() {
                     <p>
                       {status.blocked
                         ? "Restore Steam’s network access first."
-                        : desktop && !status.steamRunning
+                        : (liveDesktop || testView) && !status.steamRunning
                           ? "Open Steam and sign in first."
                           : "Automatically hide its status from friends."}
                     </p>
                   </div>
                   <button
                     className="small-button"
-                    disabled={!!busy || loading || status.blocked || (desktop && !status.steamRunning)}
+                    disabled={!!busy || loading || status.blocked || ((liveDesktop || testView) && !status.steamRunning)}
                     onClick={openPrivacy}
                   >
                     {busy === "privacy" ? "Waiting for Steam…" : "Make Spacewar private"}
@@ -556,7 +667,7 @@ export default function App() {
                 <div className="setting-row">
                   <div>
                     <strong>{availableUpdate ? `Update v${availableUpdate.version} ready` : "Updates"}</strong>
-                    <p>{updateError ?? (availableUpdate
+                    <p>{updateError ?? updateFeedback ?? (availableUpdate
                       ? "Download from GitHub and restart to finish updating."
                       : "Checks GitHub automatically when you open the app.")}</p>
                   </div>
@@ -574,7 +685,7 @@ export default function App() {
                           : "Check for updates"}
                   </button>
                 </div>
-                <p className="modal-footnote">RBX Tools v{appVersion} · {desktop ? "Windows desktop edition" : "Browser preview · no system changes"}</p>
+                <p className="modal-footnote">RBX Tools v{appVersion} · {testView ? "UI test view · simulated actions" : desktop ? "Windows desktop edition" : "Browser preview · no system changes"}</p>
               </>
             ) : modal === "update" ? (
               <>

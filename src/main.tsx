@@ -4,6 +4,7 @@ import "./fonts.css";
 import App from "./App";
 import "./styles.css";
 import "./pocket-theme.css";
+import "./ui-test-view.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

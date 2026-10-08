@@ -1,0 +1,22 @@
+.ui-test-panel {
+  position: fixed;
+  z-index: 60;
+  top: 12px;
+  right: 12px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 14px;
+  border: 2px solid #c56673;
+  background: #512733;
+  color: #ffdbc9;
+  box-shadow: 4px 5px #190e15;
+  font-size: 12px;
+}
+.ui-test-panel.collapsed { width: auto; }
+.ui-test-heading { display: flex; gap: 8px; align-items: center; }
+.ui-test-heading strong { flex: 1; }
+.ui-test-panel p { margin: 10px 0; color: #e2b6aa; }
+.ui-test-panel label { display: grid; grid-template-columns: 85px minmax(0, 1fr); align-items: center; gap: 8px; margin: 9px 0; }
+.ui-test-panel select { width: 100%; min-width: 0; padding: 6px; border: 2px solid #d97b82; border-radius: 0; background: #352128; color: #ffe1cc; font: inherit; }
+.ui-test-panel select:focus-visible { outline: 2px solid #ffd0bc; outline-offset: 2px; }

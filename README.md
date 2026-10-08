@@ -14,6 +14,12 @@ The privacy action uses Valve's authenticated `AccountPrivateApps` web service, 
 
 The application requests administrator access on launch and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
 
+### UI test view
+
+Press **Ctrl+Shift+T** in the desktop app to enter or exit the UI test view. For a browser preview, run `scripts/build.ps1 dev` and open `http://127.0.0.1:1420/?ui-test=1`. The test controls select Tool Library or Steamy Friends, online/offline/connecting/blocked/stopped/missing Steam states, every toast (including stacked error and update), and Settings, startup update, or force-restart modals. Busy and update-error states are also available. **Hide controls** clears the controls from the preview while keeping a small toggle visible.
+
+Buttons simulate their actions in this view. No Steam, traffic, account privacy, file picker, GitHub download, or installation commands run. Toasts stay visible until dismissed. **Exit test view** restores normal operation. The activation instructions are also saved in `AGENTS.md` for future UI work.
+
 ### GitHub updates
 
 The desktop app checks the latest stable release in `Coldobird/RbxTools` on startup and every six hours. An available update at startup opens a dialog with **Update** and **Cancel**; six-hour checks show a toast with an **Update** button instead. Update toasts stay visible until dismissed or another action starts. Cancel keeps the update available in Settings, which also provides **Check for updates** and **Update and restart**. The sidebar button always says **Settings**. Checks use GitHub's public release API without a token or OneDrive access. Connection and rate-limit errors appear in Settings.

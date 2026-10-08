@@ -133,7 +133,11 @@ button:disabled { opacity: .62; }
 .toast.error { border-color: #df8c72; color: #ffe0cb; background: #59303a; }
 .toast.success { border-color: #a5bd82; color: #e2efc7; background: #384031; }
 .toast button { color: inherit; }
-.toast .toast-update { padding: 4px 8px; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
+.toast { align-items: center; }
+.toast > svg { margin-top: 0; }
+/* Center the visible glyphs as well as their taller font line boxes. */
+.toast > span { position: relative; top: 1px; }
+.toast .toast-update { padding: 5px 8px 3px; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
 .toast .toast-update:not(:disabled):hover { background: #c35b68; }
 .activity-content { border-color: #99535f; }
 .activity-empty, .log-row, .log-row time { color: #ebc1b6; }
@@ -148,6 +152,8 @@ button:disabled { opacity: .62; }
 .setting-row p, .modal-intro, .modal-footnote { color: #e2b6aa; }
 .setting-row { border-color: #9b5661; }
 .small-button { border-radius: 0; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
+.modal .primary-button, .modal .secondary-button { padding-block: 12px 8px; }
+.modal .small-button { padding-block: 10px 8px; }
 
 .modal-close { color: #ffcfbc; }
 .amber-button { background: #97654a; border-color: #f3c08b; color: #fff1d4; }
