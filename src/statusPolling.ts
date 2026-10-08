@@ -48,6 +48,8 @@ export function startStatusPolling(options: PollOptions, interval = 3000) {
 export function sameStatus(left: Status, right: Status): boolean {
   return left.steamPath === right.steamPath
     && left.steamRunning === right.steamRunning
+    && left.steamOnline === right.steamOnline
+    && left.reconnectError === right.reconnectError
     && left.targetPath === right.targetPath
     && left.blocked === right.blocked
     && left.elevated === right.elevated;

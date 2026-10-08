@@ -1,11 +1,21 @@
 //! Opt-in live test of the production restart and WFP implementations.
-//! Requires administrator access; never force-closes Steam or initializes a game.
+//! Requires administrator access. The opt-in reconnect mode uses AppID 480.
 #[allow(dead_code)]
 #[path = "../src/network.rs"]
 mod network;
 #[allow(dead_code)]
 #[path = "../src/steam.rs"]
 mod steam;
+#[allow(dead_code)]
+#[path = "../src/steam_connection.rs"]
+mod steam_connection;
+#[path = "../src/steam_controls.rs"]
+mod steam_controls;
+#[path = "../src/steam_reconnect.rs"]
+mod steam_reconnect;
+#[allow(dead_code)]
+#[path = "../src/steamworks.rs"]
+mod steamworks;
 
 use serde_json::{json, Value};
 use std::{
@@ -122,6 +132,23 @@ impl Drop for Probe {
     }
 }
 
+fn start_probe(path: &Path, observer_path: &Path, seconds: u64) -> Result<Probe, String> {
+    let probe_exe = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .with_file_name("steam_native_reconnect_probe.exe");
+    Ok(Probe(
+        Command::new(probe_exe)
+            .arg("observe")
+            .arg(path)
+            .arg(observer_path)
+            .arg(seconds.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Native observer could not start: {e}"))?,
+    ))
+}
+
 fn latest_online(path: &Path) -> Option<bool> {
     let content = fs::read_to_string(path).ok()?;
     for line in content.lines().rev() {
@@ -147,6 +174,8 @@ fn run(
     steam_path: &Path,
     observer_path: &Path,
     max_block: Duration,
+    force: bool,
+    reconnect: bool,
     recorder: &mut Recorder,
 ) -> Result<(), String> {
     if !steam::is_elevated() {
@@ -169,31 +198,26 @@ fn run(
         json!({"steamPids":before,"ownedFilters":initial_filters,"gameInitialized":false}),
     )?;
 
-    let message = steam::restart(&path, false)?;
+    let message = if reconnect {
+        "Keeping the existing Steam session".to_string()
+    } else {
+        steam_controls::restart(&path, force, &mut None)?
+    };
     let after = steam::matching_processes(&path)?;
-    if after.len() != 1 || after == before {
+    if after.len() != 1 || (!reconnect && after == before) || (reconnect && after != before) {
         return Err("Restart did not produce a new Steam process.".into());
     }
     recorder.record(
-        "restart_pass",
-        json!({"message":message,"beforePids":before,"afterPids":after}),
+        if reconnect {
+            "session_preserved"
+        } else {
+            "restart_pass"
+        },
+        json!({"message":message,"force":force,"beforePids":before,"afterPids":after}),
     )?;
     thread::sleep(Duration::from_secs(8));
 
-    let probe_exe = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .with_file_name("steam_native_reconnect_probe.exe");
-    let mut probe = Probe(
-        Command::new(probe_exe)
-            .arg("observe")
-            .arg(&path)
-            .arg(observer_path)
-            .arg("300")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Native observer could not start: {e}"))?,
-    );
+    let mut probe = start_probe(&path, observer_path, max_block.as_secs() + 240)?;
     let online_deadline = Instant::now() + Duration::from_secs(40);
     while latest_online(observer_path) != Some(true) {
         if let Some(status) = probe.0.try_wait().map_err(|e| e.to_string())? {
@@ -209,7 +233,10 @@ fn run(
         json!({"online":true,"gameInitialized":false}),
     )?;
 
-    let mut block = network::NetworkBlock::start(&path)?;
+    if steam_connection::observed_online(Some(&path), true, false) != Some(true) {
+        return Err("Production connection status did not confirm the online baseline.".into());
+    }
+    let mut block = Some(network::NetworkBlock::start(&path)?);
     let blocked_at = Instant::now();
     let during_filters = owned_filters()?;
     recorder.record(
@@ -221,20 +248,61 @@ fn run(
     }
     let mut offline_seen = false;
     while blocked_at.elapsed() < max_block {
+        if steam::matching_processes(&path)? != after {
+            return Err(
+                "Steam exited or changed process during the block; refusing to credit recovery."
+                    .into(),
+            );
+        }
         if latest_online(observer_path) == Some(false) {
             offline_seen = true;
         }
-        if offline_seen && blocked_at.elapsed() >= Duration::from_secs(10) {
+        if steam_connection::observed_online(Some(&path), true, true) != Some(false) {
+            return Err("Production status incorrectly reports online while blocked.".into());
+        }
+        if (force || reconnect) && blocked_at.elapsed().as_secs().is_multiple_of(30) {
+            recorder.record("blocked_sample", json!({"blockedMs":blocked_at.elapsed().as_millis(),"steamPids":after,"productionOnline":false,"nativeOnline":latest_online(observer_path)}))?;
+            thread::sleep(Duration::from_secs(1));
+        }
+        if !force && !reconnect && offline_seen && blocked_at.elapsed() >= Duration::from_secs(10) {
             break;
         }
         thread::sleep(Duration::from_millis(250));
     }
     let restored_at = Instant::now();
-    block.close()?;
+    block.as_mut().unwrap().close()?;
+    drop(block.take());
     let after_filters = owned_filters()?;
     recorder.record("network_restored", json!({"blockDurationMs":blocked_at.elapsed().as_millis(),"offlineSeen":offline_seen,"ownedFilters":after_filters}))?;
+    recorder.record("restored_status", json!({"productionOnline":steam_connection::observed_online(Some(&path), true, false),"nativeOnline":latest_online(observer_path)}))?;
     if after_filters != 0 {
         return Err("Owned WFP filters remained after restore.".into());
+    }
+    if reconnect {
+        recorder.record(
+            "reconnect_started",
+            json!({"restoreMs":restored_at.elapsed().as_millis(),"appId":480}),
+        )?;
+        let launcher = std::env::var_os("RBX_RECONNECT_LAUNCHER")
+            .map(std::path::PathBuf::from)
+            .unwrap_or(std::env::current_exe().map_err(|e| e.to_string())?);
+        let result = steam_reconnect::recover(&launcher, &path, || true)?;
+        recorder.record(
+            "reconnect_result",
+            json!({"restoreMs":restored_at.elapsed().as_millis(),"result":result}),
+        )?;
+    }
+    if latest_online(observer_path).is_none() {
+        // Long blocks can invalidate the persistent native pipe. Preserve its
+        // evidence and reattach after restoration, as the app's reader does.
+        drop(probe);
+        fs::copy(observer_path, observer_path.with_extension("blocked.jsonl"))
+            .map_err(|e| format!("Could not preserve observer evidence: {e}"))?;
+        probe = start_probe(&path, observer_path, 180)?;
+        recorder.record(
+            "observer_reattached",
+            json!({"reason":"stale native IPC after long block"}),
+        )?;
     }
     let online_deadline = restored_at + Duration::from_secs(90);
     while latest_online(observer_path) != Some(true) {
@@ -248,22 +316,67 @@ fn run(
     if steam::matching_processes(&path)? != after {
         return Err("Steam restarted during the network cycle.".into());
     }
-    recorder.record("network_online", json!({"online":true,"restoreToOnlineMs":restored_at.elapsed().as_millis(),"steamPids":after,"gameInitialized":false}))?;
+    let restore_to_online = restored_at.elapsed();
+    recorder.record("network_online", json!({"online":true,"restoreToOnlineMs":restore_to_online.as_millis(),"steamPids":after,"observerGameInitialized":false}))?;
     if !offline_seen {
         return Err("WFP stop/restore passed, but a native offline transition was not observed during the short block.".into());
     }
+    if steam_connection::observed_online(Some(&path), true, false) != Some(true) {
+        return Err("Production status did not confirm recovery.".into());
+    }
+    if reconnect && restore_to_online > Duration::from_secs(10) {
+        return Err("Steam recovered, but missed the ten-second restore-to-login target.".into());
+    }
+    if reconnect {
+        for _ in 0..10 {
+            thread::sleep(Duration::from_secs(1));
+            if steam::matching_processes(&path)? != after
+                || latest_online(observer_path) != Some(true)
+            {
+                return Err("Steam login was not stable after recovery.".into());
+            }
+        }
+        recorder.record(
+            "stable_online",
+            json!({"seconds":10,"steamPids":after,"online":true}),
+        )?;
+    }
+    if force {
+        drop(probe);
+        block = Some(network::NetworkBlock::start(&path)?);
+        let message = steam_controls::restart(&path, true, &mut block)?;
+        let final_pids = steam::matching_processes(&path)?;
+        let filters = owned_filters()?;
+        if block.is_some() || filters != 0 || final_pids.is_empty() || final_pids == after {
+            return Err(
+                "Force restart while blocked did not clear filters and replace Steam.".into(),
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(90);
+        while steam_connection::observed_online(Some(&path), true, false) != Some(true) {
+            if Instant::now() >= deadline {
+                return Err("Steam did not return online after blocked force restart.".into());
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+        recorder.record("blocked_force_restart_pass", json!({"message":message,"beforePids":after,"afterPids":final_pids,"ownedFilters":filters,"productionOnline":true}))?;
+    }
     recorder.record(
         "complete",
-        json!({"passed":true,"ownedFilters":0,"online":true,"gameInitialized":false}),
+        json!({"passed":true,"ownedFilters":owned_filters()?,"online":true,"observerGameInitialized":false,"spacewarRecoveryEnabled":reconnect}),
     )?;
     Ok(())
 }
 
 fn main() -> Result<(), String> {
+    if let Some(code) = steam_reconnect::run_helper_from_args() {
+        std::process::exit(code);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
         return Err(
-            "Usage: steam_controls_smoke <steam.exe> <events.jsonl> [max-block-seconds=90]".into(),
+            "Usage: steam_controls_smoke <steam.exe> <events.jsonl> [block-seconds=90] [force|reconnect]"
+                .into(),
         );
     }
     let seconds = args
@@ -272,8 +385,10 @@ fn main() -> Result<(), String> {
         .transpose()
         .map_err(|e| e.to_string())?
         .unwrap_or(90);
-    if !(10..=120).contains(&seconds) {
-        return Err("Block duration must be between 10 and 120 seconds.".into());
+    let force = args.get(3).is_some_and(|value| value == "force");
+    let reconnect = args.get(3).is_some_and(|value| value == "reconnect");
+    if !(10..=900).contains(&seconds) {
+        return Err("Block duration must be between 10 and 900 seconds.".into());
     }
     let mut recorder = Recorder {
         file: File::create(&args[1]).map_err(|e| e.to_string())?,
@@ -284,6 +399,8 @@ fn main() -> Result<(), String> {
         Path::new(&args[0]),
         &observer,
         Duration::from_secs(seconds),
+        force,
+        reconnect,
         &mut recorder,
     );
     if let Err(error) = &result {

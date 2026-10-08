@@ -14,8 +14,8 @@ use windows_sys::Win32::{
             TH32CS_SNAPPROCESS,
         },
         Registry::{
-            RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
-            RRF_SUBKEY_WOW6432KEY,
+            RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD,
+            RRF_RT_REG_SZ, RRF_SUBKEY_WOW6432KEY,
         },
         Threading::{
             GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
@@ -163,7 +163,7 @@ fn is_steam_process(name: &[u16]) -> bool {
             })
 }
 
-fn visit_steam_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String> {
+fn visit_client_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String> {
     unsafe {
         let snapshot = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
         if snapshot.0 == INVALID_HANDLE_VALUE {
@@ -173,7 +173,11 @@ fn visit_steam_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         let mut running = Process32FirstW(snapshot.0, &mut entry);
         while running != 0 {
-            if is_steam_process(&entry.szExeFile) {
+            if is_steam_process(&entry.szExeFile)
+                || String::from_utf16_lossy(&entry.szExeFile)
+                    .trim_end_matches('\0')
+                    .eq_ignore_ascii_case("steamwebhelper.exe")
+            {
                 let process = Handle(OpenProcess(
                     PROCESS_QUERY_LIMITED_INFORMATION,
                     0,
@@ -189,6 +193,50 @@ fn visit_steam_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String
         }
         Ok(())
     }
+}
+
+fn visit_steam_processes(mut visit: impl FnMut(u32, &Path)) -> Result<(), String> {
+    visit_client_processes(|pid, path| {
+        if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("steam.exe"))
+        {
+            visit(pid, path);
+        }
+    })
+}
+
+fn belongs_to_client(candidate: &Path, steam: &Path) -> bool {
+    if same_path(candidate, steam) {
+        return true;
+    }
+    let Some(root) = steam.parent() else {
+        return false;
+    };
+    candidate.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .eq_ignore_ascii_case("steamwebhelper.exe")
+    }) && candidate
+        .to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+        .starts_with(&format!(
+            "{}\\",
+            root.to_string_lossy()
+                .replace('/', "\\")
+                .trim_end_matches('\\')
+                .to_ascii_lowercase()
+        ))
+}
+
+fn client_processes(path: &Path) -> Result<Vec<u32>, String> {
+    let mut found = Vec::new();
+    visit_client_processes(|pid, candidate| {
+        if belongs_to_client(candidate, path) {
+            found.push(pid);
+        }
+    })?;
+    Ok(found)
 }
 
 fn process_path(handle: HANDLE) -> Option<PathBuf> {
@@ -286,13 +334,14 @@ pub fn active_steam_id() -> Option<String> {
             &mut size,
         )
     };
-    (result == 0 && account_id != 0).then(|| (76561197960265728u64 + u64::from(account_id)).to_string())
+    (result == 0 && account_id != 0)
+        .then(|| (76561197960265728u64 + u64::from(account_id)).to_string())
 }
 
 pub fn restart(path: &Path, force: bool) -> Result<String, String> {
     let path = validate_path(path)?;
     let was_running = !matching_processes(&path)?.is_empty();
-    if was_running {
+    if was_running || (force && !client_processes(&path)?.is_empty()) {
         if !force {
             launch(&path, &["-shutdown"])?;
             let deadline = Instant::now() + Duration::from_secs(8);
@@ -303,28 +352,51 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
                 return Err("STEAM_STILL_RUNNING".into());
             }
         } else {
-            for pid in matching_processes(&path)? {
-                unsafe {
-                    let process = Handle(OpenProcess(
-                        PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | 0x00100000,
-                        0,
-                        pid,
-                    ));
-                    if process.0.is_null() {
-                        return Err(last_error("Could not close Steam"));
-                    }
-                    if !process_path(process.0)
-                        .is_some_and(|candidate| same_path(&candidate, &path))
-                    {
-                        continue;
-                    }
-                    if TerminateProcess(process.0, 0) == 0 {
-                        return Err(last_error("Could not force-close Steam"));
-                    }
-                    if WaitForSingleObject(process.0, 5000) != 0 {
-                        return Err("Steam did not finish closing. Try again.".into());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let processes = client_processes(&path)?;
+                if processes.is_empty() {
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    return Err(
+                        "Steam's client processes did not finish closing. Try again.".into(),
+                    );
+                }
+                for pid in processes {
+                    unsafe {
+                        let process = Handle(OpenProcess(
+                            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | 0x00100000,
+                            0,
+                            pid,
+                        ));
+                        if process.0.is_null() {
+                            let error = last_error("Could not close Steam");
+                            if !client_processes(&path)?.contains(&pid) {
+                                continue;
+                            }
+                            return Err(error);
+                        }
+                        if !process_path(process.0)
+                            .is_some_and(|candidate| belongs_to_client(&candidate, &path))
+                        {
+                            continue;
+                        }
+                        if TerminateProcess(process.0, 0) == 0 {
+                            let error = last_error("Could not force-close Steam");
+                            // Windows can return ACCESS_DENIED once termination
+                            // has begun, before the handle becomes signaled.
+                            if WaitForSingleObject(process.0, 5000) == 0 {
+                                continue;
+                            }
+                            return Err(format!("{error} (PID {pid})"));
+                        }
+                        if WaitForSingleObject(process.0, 5000) != 0 {
+                            return Err("Steam did not finish closing. Try again.".into());
+                        }
                     }
                 }
+                thread::sleep(Duration::from_millis(100));
             }
             if !matching_processes(&path)?.is_empty() {
                 return Err("Steam is still closing. Try again shortly.".into());
@@ -335,6 +407,12 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if !matching_processes(&path)?.is_empty() {
+            // A bootstrap process can appear briefly then exit without starting
+            // the client. Require a stable process before reporting success.
+            thread::sleep(Duration::from_secs(2));
+            if matching_processes(&path)?.is_empty() {
+                continue;
+            }
             return Ok(if was_running {
                 "Steam restarted."
             } else {
@@ -377,5 +455,23 @@ mod tests {
         assert!(!is_steam_process(&wide("steamwebhelper.exe")));
         assert!(!is_steam_process(&wide("ſteam.exe")));
         assert!(!is_steam_process(&[]));
+    }
+
+    #[test]
+    fn force_close_targets_only_this_steam_installation() {
+        let steam = Path::new(r"C:\Steam\steam.exe");
+        assert!(belongs_to_client(
+            Path::new(r"c:\steam\bin\cef\steamwebhelper.exe"),
+            steam
+        ));
+        assert!(!belongs_to_client(
+            Path::new(r"C:\SteamOther\steamwebhelper.exe"),
+            steam
+        ));
+        assert!(!belongs_to_client(
+            Path::new(r"C:\Steam\steamapps\game.exe"),
+            steam
+        ));
+        assert!(!belongs_to_client(Path::new(r"C:\Other\steam.exe"), steam));
     }
 }

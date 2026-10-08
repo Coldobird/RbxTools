@@ -1,5 +1,12 @@
 # Steam communication recovery plan
 
+**8 October 2026 update:** The user explicitly authorized restoring the working
+Spacewar AppID 480 call. This supersedes the zero-game-presence constraint below.
+Keep the Steam process running, use a short-lived stats/lobby session only when
+offline after traffic restoration, and measure recovery against a ten-second
+restore-to-login target. Ordinary status observers remain game-free. The older
+findings below are preserved as historical investigation notes.
+
 Prepared 30 September 2026. Investigation and proposed implementation. The diagnostic recorder, startup guards, four live five-minute disconnect/reconnect trials, and a Friends follow-up have been tested. No candidate has demonstrated a repeatable improvement over natural recovery. See `steam-reconnect-test-results.md` for timings, evidence, and limits.
 
 ## Objective

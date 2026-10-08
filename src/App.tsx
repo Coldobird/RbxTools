@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FolderOpen,
   Grid2X2,
+  LoaderCircle,
   Play,
   Preview,
   RotateCw,
@@ -18,6 +19,7 @@ import {
 import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
 import { sameStatus, startStatusPolling } from "./statusPolling";
+import { connectionLabel } from "./steamStatus";
 import {
   desktop,
   getUpdate,
@@ -37,6 +39,7 @@ const appVersion = tauriConfig.version;
 const initialStatus: Status = {
   steamPath: null,
   steamRunning: false,
+  steamOnline: false,
   targetPath: null,
   blocked: false,
   elevated: false,
@@ -44,11 +47,11 @@ const initialStatus: Status = {
 const previewSteamPath = "C:\\Preview\\Steam\\steam.exe";
 const previewDelay = () => new Promise<void>((resolve) => window.setTimeout(resolve, 650));
 
-type IconState = "restarting" | "running" | "blocked" | "connected" | null;
+type IconState = "restarting" | "connecting" | "running" | "blocked" | "connected" | null;
 
 function StatusIcon({ state, label }: { state: IconState; label: string }) {
   if (!state) return null;
-  const Icon = state === "restarting" ? RotateCw : state === "running" ? Play : state === "blocked" ? WifiOff : Wifi;
+  const Icon = state === "connecting" ? LoaderCircle : state === "restarting" ? RotateCw : state === "running" ? Play : state === "blocked" ? WifiOff : Wifi;
   return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} className={state === "restarting" ? "restart-spin" : undefined} /></span>;
 }
 
@@ -64,9 +67,7 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | null>(null);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
-  const [networkPhase, setNetworkPhase] = useState<"reconnecting" | "connected" | null>(null);
   const restartTimer = useRef<number | null>(null);
-  const networkTimer = useRef<number | null>(null);
   const busyRef = useRef(false);
   const statusGeneration = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
@@ -74,11 +75,10 @@ export default function App() {
 
   useEffect(() => () => {
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
-    if (networkTimer.current !== null) window.clearTimeout(networkTimer.current);
   }, []);
 
   const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "running" && status.steamRunning ? "running" : null;
-  const networkIcon: IconState = status.blocked ? "blocked" : networkPhase === "connected" ? "connected" : null;
+  const networkIcon: IconState = status.blocked ? "blocked" : loading || status.steamRunning && status.steamOnline === null ? "connecting" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
   const toolIcon: IconState = restartPhase === "restarting" ? "restarting" : networkIcon ?? restartIcon;
 
   const toolState = error
@@ -89,10 +89,10 @@ export default function App() {
         ? { label: busy === "network" ? "Changing network state" : busy === "privacy" ? "Setting Spacewar privacy" : "Checking Steam", className: "busy" }
       : status.blocked
         ? { label: "Steam network blocked", className: "blocked" }
-        : networkPhase === "connected"
-          ? { label: "Steam connection restored", className: "connected" }
+        : status.steamOnline === true
+          ? { label: "Steam online", className: "connected" }
         : status.steamRunning
-          ? { label: "Steam running", className: "running" }
+          ? { label: connectionLabel(status), className: status.steamOnline === null ? "busy" : "idle" }
           : status.steamPath
             ? { label: "Steam not running", className: "idle" }
             : { label: "Steam location needed", className: "setup" };
@@ -116,6 +116,7 @@ export default function App() {
         setLoading(false);
       },
       onError(err) {
+        setStatus((current) => ({ ...current, steamOnline: null }));
         setError(String(err));
         setLoading(false);
       },
@@ -135,6 +136,10 @@ export default function App() {
     const timer = window.setTimeout(() => setError(null), 8000);
     return () => window.clearTimeout(timer);
   }, [error]);
+
+  useEffect(() => {
+    if (status.reconnectError) setError(status.reconnectError);
+  }, [status.reconnectError]);
 
   useEffect(() => {
     if (!notice) return;
@@ -199,7 +204,6 @@ export default function App() {
       await work();
     } catch (err) {
       if (name === "restart") setRestartPhase(null);
-      if (name === "network") setNetworkPhase(null);
       const message = String(err);
       if (message.includes("STEAM_STILL_RUNNING")) setModal("force");
       else {
@@ -219,7 +223,7 @@ export default function App() {
     void action("restart", async () => {
       if (!desktop) {
         await previewDelay();
-        setStatus((current) => ({ ...current, steamRunning: true }));
+        setStatus((current) => ({ ...current, steamRunning: true, steamOnline: true, blocked: false }));
         setNotice("Steam restarted (preview only). No process was changed.");
         setRestartPhase("running");
         restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
@@ -235,20 +239,14 @@ export default function App() {
 
   function toggleNetwork() {
     if (busyRef.current) return;
-    if (networkTimer.current !== null) window.clearTimeout(networkTimer.current);
-    setNetworkPhase(status.blocked ? "reconnecting" : null);
     void action("network", async () => {
       if (!desktop) {
         await previewDelay();
         const blocked = !status.blocked;
-        setStatus((current) => ({ ...current, blocked }));
+        setStatus((current) => ({ ...current, blocked, steamOnline: !blocked && current.steamRunning }));
         setNotice(blocked
           ? "Steam network paused (preview only). No traffic was changed."
           : "Steam network restored (preview only). No traffic was changed.");
-        if (!blocked) {
-          setNetworkPhase("connected");
-          networkTimer.current = window.setTimeout(() => setNetworkPhase(null), 5000);
-        }
         return;
       }
       const next = await setBlocked(!status.blocked);
@@ -257,10 +255,6 @@ export default function App() {
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
       setNotice(message);
-      if (!next.blocked) {
-        setNetworkPhase("connected");
-        networkTimer.current = window.setTimeout(() => setNetworkPhase(null), 5000);
-      }
     });
   }
 
@@ -450,16 +444,10 @@ export default function App() {
                   <h2>{status.blocked ? "Network paused" : "Stop network"}</h2>
                   <p>Pause incoming and outgoing traffic for Steam only.</p>
                   <div className="control-status">
-                    <StatusIcon state={networkIcon} label={status.blocked ? "Connection blocked" : "Connection up"} />
+                    <StatusIcon state={networkIcon} label={loading ? "Connecting…" : connectionLabel(status)} />
                     {busy === "network"
                       ? status.blocked ? "Restoring connection…" : "Pausing connection…"
-                      : networkPhase === "reconnecting" && !status.blocked
-                        ? "Confirming connection…"
-                      : status.blocked
-                      ? "Incoming and outgoing traffic blocked"
-                      : status.targetPath
-                        ? "No RBX block active"
-                        : "Steam location needed"}
+                      : loading ? "Connecting…" : connectionLabel(status)}
                   </div>
                   <button
                     className={status.blocked ? "primary-button amber-button" : "secondary-button"}
@@ -573,9 +561,9 @@ export default function App() {
             ) : (
               <>
                 <RotateCw className="accent" size={26} />
-                <h2 id="modal-title">Steam is still running</h2>
+                <h2 id="modal-title">Force restart Steam?</h2>
                 <p className="modal-intro">
-                  Steam did not finish closing. Force-close it and restart? This can interrupt downloads and cloud sync.
+                  Force-close Steam and restart it with network access restored? This can interrupt downloads and cloud sync.
                 </p>
                 <div className="modal-actions">
                   <button className="secondary-button" onClick={() => setModal(null)}>Cancel</button>

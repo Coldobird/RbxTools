@@ -79,7 +79,7 @@ impl NetworkBlock {
                 FwpmSubLayerAdd0(handle, &sublayer, ptr::null_mut()),
                 "Creating temporary filter group",
             )?;
-            let condition = FWPM_FILTER_CONDITION0 {
+            let application = FWPM_FILTER_CONDITION0 {
                 fieldKey: FWPM_CONDITION_ALE_APP_ID,
                 matchType: FWP_MATCH_EQUAL,
                 conditionValue: FWP_CONDITION_VALUE0 {
@@ -87,6 +87,19 @@ impl NetworkBlock {
                     Anonymous: FWP_CONDITION_VALUE0_0 { byteBlob: app_id },
                 },
             };
+            // Keep Steam's localhost communication with its UI and helpers.
+            // Only traffic leaving/entering this computer should be paused.
+            let external = FWPM_FILTER_CONDITION0 {
+                fieldKey: FWPM_CONDITION_FLAGS,
+                matchType: FWP_MATCH_FLAGS_NONE_SET,
+                conditionValue: FWP_CONDITION_VALUE0 {
+                    r#type: FWP_UINT32,
+                    Anonymous: FWP_CONDITION_VALUE0_0 {
+                        uint32: FWP_CONDITION_FLAG_IS_LOOPBACK,
+                    },
+                },
+            };
+            let mut conditions = [application, external];
             for layer in [
                 FWPM_LAYER_ALE_AUTH_CONNECT_V4,
                 FWPM_LAYER_ALE_AUTH_CONNECT_V6,
@@ -104,8 +117,8 @@ impl NetworkBlock {
                         r#type: FWP_UINT8,
                         Anonymous: FWP_VALUE0_0 { uint8: 15 },
                     },
-                    numFilterConditions: 1,
-                    filterCondition: &condition as *const _ as *mut _,
+                    numFilterConditions: conditions.len() as u32,
+                    filterCondition: conditions.as_mut_ptr(),
                     action: FWPM_ACTION0 {
                         r#type: FWP_ACTION_BLOCK,
                         ..std::mem::zeroed()

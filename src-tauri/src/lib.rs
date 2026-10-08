@@ -2,6 +2,10 @@ mod github_update;
 mod network;
 mod spacewar_privacy;
 mod steam;
+mod steam_connection;
+mod steam_controls;
+mod steam_reconnect;
+#[allow(dead_code)]
 mod steamworks;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +15,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 use tauri::Manager;
 
@@ -25,9 +29,9 @@ struct AppState {
     preferences: Mutex<Preferences>,
     network: Mutex<Option<network::NetworkBlock>>,
     blocked_at: Mutex<Option<Instant>>,
-    steamworks_runtime: Mutex<Option<PathBuf>>,
     network_revision: AtomicU64,
     reconnect_assisting: AtomicBool,
+    reconnect_error: Mutex<Option<String>>,
     restarting: AtomicBool,
     privacy_changing: AtomicBool,
     updating: AtomicBool,
@@ -40,6 +44,8 @@ struct AppState {
 struct Status {
     steam_path: Option<String>,
     steam_running: bool,
+    steam_online: Option<bool>,
+    reconnect_error: Option<String>,
     target_path: Option<String>,
     blocked: bool,
     elevated: bool,
@@ -47,15 +53,24 @@ struct Status {
 
 fn status(state: &AppState) -> Result<Status, String> {
     let (path, running) = inspect_steam(state)?;
+    let network = state
+        .network
+        .lock()
+        .map_err(|_| "Network state unavailable")?;
+    let blocked = network.is_some();
+    let online =
+        steam_connection::observed_online(path.as_deref().map(Path::new), running, blocked);
     Ok(Status {
         steam_path: path.clone(),
         target_path: path,
         steam_running: running,
-        blocked: state
-            .network
+        steam_online: online,
+        reconnect_error: state
+            .reconnect_error
             .lock()
-            .map_err(|_| "Network state unavailable")?
-            .is_some(),
+            .map_err(|_| "Reconnect state unavailable")?
+            .clone(),
+        blocked,
         elevated: state.elevated,
     })
 }
@@ -160,6 +175,7 @@ fn update_path(kind: &str, path: &Path, state: &AppState) -> Result<Status, Stri
         .lock()
         .map_err(|_| "Settings unavailable")? = preferences;
     drop(network);
+    state.network_revision.fetch_add(1, Ordering::SeqCst);
     status(state)
 }
 
@@ -180,6 +196,9 @@ fn update_blocked(
         .network
         .lock()
         .map_err(|_| "Network state unavailable")?;
+    if state.restarting.load(Ordering::SeqCst) {
+        return Err("Wait for Steam to finish restarting.".into());
+    }
     if blocked && network.is_none() {
         let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
         let path = steam::validate_path(Path::new(&path))?;
@@ -188,8 +207,10 @@ fn update_blocked(
             .blocked_at
             .lock()
             .map_err(|_| "Network timing unavailable")? = Some(Instant::now());
-        // Runtime discovery walks installed games. Defer it to the reconnect
-        // worker, which is only needed after a long pause.
+        *state
+            .reconnect_error
+            .lock()
+            .map_err(|_| "Reconnect state unavailable")? = None;
         state.network_revision.fetch_add(1, Ordering::SeqCst);
     } else if !blocked {
         // Keep ownership if an explicit close fails so the UI never falsely says restored.
@@ -205,14 +226,9 @@ fn update_blocked(
             .map(|started| started.elapsed());
         let revision = state.network_revision.fetch_add(1, Ordering::SeqCst) + 1;
         drop(network);
-        if blocked_for.is_some_and(|duration| duration >= Duration::from_secs(300)) {
+        if blocked_for.is_some() {
             if let Some(path) = resolve_steam_path(&state)? {
-                let runtime = state
-                    .steamworks_runtime
-                    .lock()
-                    .map_err(|_| "Steamworks runtime state unavailable")?
-                    .clone();
-                start_reconnect_assist(app, PathBuf::from(path), runtime, revision);
+                start_reconnect_assist(app, PathBuf::from(path), revision);
             }
         }
         return status(&state);
@@ -221,14 +237,8 @@ fn update_blocked(
     status(&state)
 }
 
-fn start_reconnect_assist(
-    app: tauri::AppHandle,
-    steam_path: PathBuf,
-    runtime: Option<PathBuf>,
-    revision: u64,
-) {
+fn start_reconnect_assist(app: tauri::AppHandle, steam_path: PathBuf, revision: u64) {
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(3));
         let state = app.state::<AppState>();
         if state.privacy_changing.load(Ordering::SeqCst)
             || state.network_revision.load(Ordering::SeqCst) != revision
@@ -236,7 +246,6 @@ fn start_reconnect_assist(
                 .network
                 .lock()
                 .map_or(true, |network| network.is_some())
-            || state.reconnect_assisting.swap(true, Ordering::SeqCst)
         {
             return;
         }
@@ -246,32 +255,34 @@ fn start_reconnect_assist(
                 self.0.store(false, Ordering::SeqCst);
             }
         }
-        let _reset = Reset(&state.reconnect_assisting);
         let still_current = || {
             !state.privacy_changing.load(Ordering::SeqCst)
+                && !state.restarting.load(Ordering::SeqCst)
+                && !state.updating.load(Ordering::SeqCst)
                 && state.network_revision.load(Ordering::SeqCst) == revision
                 && state.network.lock().is_ok_and(|network| network.is_none())
         };
         if !still_current() {
             return;
         }
-        let Ok(client) = steamworks::Client::connect(&steam_path, runtime.as_deref()) else {
-            return;
-        };
-        if let Ok(mut runtime) = state.steamworks_runtime.lock() {
-            *runtime = Some(client.runtime_path().to_path_buf());
-        }
-        if client.is_logged_on() || !still_current() {
-            return;
-        }
-        let stats_requested = client.request_user_stats().is_ok();
-        if (stats_requested && client.wait_until_logged_on(Duration::from_secs(4)))
-            || !still_current()
+        while state
+            .reconnect_assisting
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
         {
-            return;
+            if !still_current() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        if client.request_lobby_list().is_ok() {
-            let _ = client.wait_until_logged_on(Duration::from_secs(4));
+        let _reset = Reset(&state.reconnect_assisting);
+        let result = std::env::current_exe()
+            .map_err(|e| e.to_string())
+            .and_then(|exe| steam_reconnect::recover(&exe, &steam_path, still_current));
+        if still_current() {
+            if let Ok(mut error) = state.reconnect_error.lock() {
+                *error = result.err();
+            }
         }
     });
 }
@@ -294,7 +305,17 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
         }
         let _reset = Reset(&state.restarting);
         let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
-        steam::restart(Path::new(&path), force)
+        // A restart must not relaunch Steam behind our own network block.
+        let mut network = state
+            .network
+            .lock()
+            .map_err(|_| "Network state unavailable")?;
+        *state
+            .blocked_at
+            .lock()
+            .map_err(|_| "Network timing unavailable")? = None;
+        state.network_revision.fetch_add(1, Ordering::SeqCst);
+        steam_controls::restart(Path::new(&path), force, &mut network)
     })
     .await
     .map_err(|e| format!("Restart failed: {e}"))?
@@ -341,6 +362,10 @@ pub fn run_update_helper() -> Option<i32> {
     github_update::run_helper_from_args()
 }
 
+pub fn run_reconnect_helper() -> Option<i32> {
+    steam_reconnect::run_helper_from_args()
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -369,9 +394,9 @@ pub fn run() {
                 preferences: Mutex::new(preferences),
                 network: Mutex::new(None),
                 blocked_at: Mutex::new(None),
-                steamworks_runtime: Mutex::new(None),
                 network_revision: AtomicU64::new(0),
                 reconnect_assisting: AtomicBool::new(false),
+                reconnect_error: Mutex::new(None),
                 restarting: AtomicBool::new(false),
                 privacy_changing: AtomicBool::new(false),
                 updating: AtomicBool::new(false),
@@ -397,6 +422,7 @@ pub fn run() {
         }
         if matches!(event, tauri::RunEvent::Exit) {
             if let Some(state) = app.try_state::<AppState>() {
+                state.network_revision.fetch_add(1, Ordering::SeqCst);
                 if let Ok(mut network) = state.network.lock() {
                     *network = None;
                 }

@@ -4,6 +4,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 export interface Status {
   steamPath: string | null;
   steamRunning: boolean;
+  steamOnline: boolean | null;
+  reconnectError?: string | null;
   targetPath: string | null;
   blocked: boolean;
   elevated: boolean;
@@ -21,6 +23,7 @@ export const desktop = isTauri();
 const previewStatus: Status = {
   steamPath: null,
   steamRunning: false,
+  steamOnline: false,
   targetPath: null,
   blocked: false,
   elevated: false,

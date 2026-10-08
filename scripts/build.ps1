@@ -72,7 +72,9 @@ try {
             $rbxRelease = Join-Path $rbxCache 'release'
             New-Item -ItemType Directory -Path $rbxRelease -Force | Out-Null
             Copy-Item -LiteralPath 'src-tauri\target\release\rbx-tools.exe' -Destination (Join-Path $rbxRelease 'RBX-Tools.exe') -Force
-            $rbxInstaller = Get-ChildItem 'src-tauri\target\release\bundle\nsis' -Filter '*-setup.exe' | Select-Object -First 1
+            $rbxVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
+            $rbxInstaller = Get-ChildItem 'src-tauri\target\release\bundle\nsis' -Filter "*_$($rbxVersion)_*-setup.exe" |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($rbxInstaller) { Copy-Item -LiteralPath $rbxInstaller.FullName -Destination (Join-Path $rbxRelease 'RBX-Tools-Setup.exe') -Force }
             Write-Host "Ready: $rbxRelease"
         }

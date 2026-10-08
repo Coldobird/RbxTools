@@ -123,8 +123,9 @@ button:disabled { opacity: .62; }
 .nav-item > .status-icon { margin-left: auto; }
 .status-icon.running, .status-icon.connected { color: #bed79e; }
 .status-icon.running, .status-icon.connected { animation: status-icon-expire 5s linear forwards; }
+.network-card .status-icon.connected { animation: none; }
 @keyframes status-icon-expire { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
-.status-icon.restarting { color: #ffd0bc; }
+.status-icon.restarting, .status-icon.connecting { color: #ffd0bc; }
 .status-icon.blocked { color: #ffd294; }
 .restart-spin { animation: pixel-restart-spin 1.2s steps(8, end) infinite; transform-origin: center; }
 @keyframes pixel-restart-spin { to { transform: rotate(360deg); } }

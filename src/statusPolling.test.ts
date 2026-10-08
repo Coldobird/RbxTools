@@ -5,6 +5,7 @@ import { sameStatus, startStatusPolling } from "./statusPolling";
 const status: Status = {
   steamPath: "C:\\Steam\\steam.exe",
   steamRunning: true,
+  steamOnline: true,
   targetPath: "C:\\Steam\\steam.exe",
   blocked: false,
   elevated: true,
@@ -84,6 +85,8 @@ describe("status polling", () => {
     expect(sameStatus(status, { ...status })).toBe(true);
     for (const change of [
       { steamPath: null }, { targetPath: null }, { steamRunning: false },
+      { steamOnline: false }, { steamOnline: null },
+      { reconnectError: "Steam reconnect timed out" },
       { blocked: true }, { elevated: false },
     ]) expect(sameStatus(status, { ...status, ...change })).toBe(false);
   });
