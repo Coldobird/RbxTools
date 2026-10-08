@@ -65,7 +65,8 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const [modal, setModalState] = useState<"settings" | "force" | null>(null);
+  const [modal, setModalState] = useState<"settings" | "force" | "update" | null>(null);
+  const [startupUpdatePending, setStartupUpdatePending] = useState(false);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
   const restartTimer = useRef<number | null>(null);
   const busyRef = useRef(false);
@@ -97,7 +98,7 @@ export default function App() {
             ? { label: "Steam not running", className: "idle" }
             : { label: "Steam location needed", className: "setup" };
 
-  function setModal(next: "settings" | "force" | null) {
+  function setModal(next: "settings" | "force" | "update" | null) {
     if (next && !modal) returnFocusRef.current = document.activeElement as HTMLElement | null;
     setModalState(next);
   }
@@ -150,25 +151,37 @@ export default function App() {
   useEffect(() => {
     if (!desktop) return;
     let active = true;
-    const check = () => {
+    const check = (startup: boolean) => {
       void getUpdate()
         .then((result) => {
           if (!active) return;
           setAvailableUpdate(result.update);
           setUpdateError(null);
-          if (result.update) setNotice(`RBX Tools v${result.update.version} is available. Open Settings to update.`);
+          if (result.update) {
+            if (startup) setStartupUpdatePending(true);
+            else setNotice(`RBX Tools v${result.update.version} is available. Open Settings to update.`);
+          }
         })
         .catch((err) => {
           if (active) setUpdateError(String(err));
         });
     };
-    check();
-    const timer = window.setInterval(check, 6 * 60 * 60 * 1000);
+    check(true);
+    const timer = window.setInterval(() => check(false), 6 * 60 * 60 * 1000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!startupUpdatePending || modal || busy) return;
+    setStartupUpdatePending(false);
+    if (availableUpdate) {
+      returnFocusRef.current = document.activeElement as HTMLElement | null;
+      setModalState("update");
+    }
+  }, [startupUpdatePending, availableUpdate, modal, busy]);
 
   useEffect(() => {
     if (!modal) return;
@@ -491,7 +504,7 @@ export default function App() {
       )}
 
       {modal && (
-        <div className="modal-backdrop" onClick={() => { if (modal !== "force") setModal(null); }}>
+        <div className="modal-backdrop" onClick={() => { if (modal !== "force" && busy !== "install-update") setModal(null); }}>
           <section
             ref={dialogRef}
             className="modal"
@@ -499,9 +512,9 @@ export default function App() {
             aria-modal="true"
             aria-labelledby="modal-title"
             onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => { if (event.key === "Escape" && modal !== "force") setModal(null); }}
+            onKeyDown={(event) => { if (event.key === "Escape" && modal !== "force" && busy !== "install-update") setModal(null); }}
           >
-            <button className="modal-close" aria-label="Close dialog" onClick={() => setModal(null)} autoFocus>
+            <button className="modal-close" aria-label="Close dialog" disabled={busy === "install-update"} onClick={() => setModal(null)} autoFocus>
               <X size={19} />
             </button>
 
@@ -557,6 +570,21 @@ export default function App() {
                   </button>
                 </div>
                 <p className="modal-footnote">RBX Tools v{appVersion} · {desktop ? "Windows desktop edition" : "Browser preview · no system changes"}</p>
+              </>
+            ) : modal === "update" ? (
+              <>
+                <RotateCw className="accent" size={26} />
+                <h2 id="modal-title">Update available</h2>
+                <p className="modal-intro">
+                  RBX Tools v{availableUpdate?.version} is ready. Update from GitHub and restart the app to finish installing.
+                </p>
+                {updateError && <p role="alert" className="modal-intro">{updateError}</p>}
+                <div className="modal-actions">
+                  <button className="secondary-button" disabled={busy === "install-update"} onClick={() => setModal(null)}>Cancel</button>
+                  <button className="primary-button" disabled={!!busy || !availableUpdate} onClick={installGithubUpdate}>
+                    {busy === "install-update" ? "Downloading…" : "Update"}
+                  </button>
+                </div>
               </>
             ) : (
               <>

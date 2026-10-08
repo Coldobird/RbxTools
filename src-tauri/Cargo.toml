@@ -1,6 +1,6 @@
 [package]
 name = "rbx-tools"
-version = "0.2.16"
+version = "0.2.17"
 description = "A pocket-sized collection of game utilities"
 authors = ["RBX Tools"]
 edition = "2021"

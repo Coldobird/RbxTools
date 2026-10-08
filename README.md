@@ -16,7 +16,7 @@ The application requests administrator access on launch and automatically finds 
 
 ### GitHub updates
 
-The desktop app checks the latest stable release in `Coldobird/RbxTools` on startup and every six hours. Settings also provides **Check for updates** and **Update and restart**. Checks use GitHub's public release API without a token or OneDrive access. Connection and rate-limit errors appear in Settings.
+The desktop app checks the latest stable release in `Coldobird/RbxTools` on startup and every six hours. An available update at startup opens a dialog with **Update** and **Cancel**; six-hour checks show a toast instead. Cancel keeps the update available in Settings, which also provides **Check for updates** and **Update and restart**. Checks use GitHub's public release API without a token or OneDrive access. Connection and rate-limit errors appear in Settings.
 
 An update downloads only `RBX-Tools.exe`, verifies GitHub's SHA-256 digest, size, and Windows x64 executable header, then stages a helper beside the running app. The helper waits for the original process to exit, replaces that same executable (including renamed portable copies), and restarts it. The prior executable is restored if replacement or confirmed startup fails. Preferences stay in the existing per-user configuration folder. The portable build does not install WebView2; it uses the runtime already required by the running app.
 
