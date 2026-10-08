@@ -3,7 +3,6 @@ import {
   Check,
   ArrowLeft,
   CircleAlert,
-  ChevronRight,
   FolderOpen,
   Grid2X2,
   LoaderCircle,
@@ -62,7 +61,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ message: string; update: boolean } | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | "update" | null>(null);
@@ -101,6 +100,10 @@ export default function App() {
   function setModal(next: "settings" | "force" | "update" | null) {
     if (next && !modal) returnFocusRef.current = document.activeElement as HTMLElement | null;
     setModalState(next);
+  }
+
+  function showNotice(message: string, update = false) {
+    setNotice({ message, update });
   }
 
   useEffect(() => {
@@ -143,7 +146,7 @@ export default function App() {
   }, [status.reconnectError]);
 
   useEffect(() => {
-    if (!notice) return;
+    if (!notice || notice.update) return;
     const timer = window.setTimeout(() => setNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
@@ -159,7 +162,7 @@ export default function App() {
           setUpdateError(null);
           if (result.update) {
             if (startup) setStartupUpdatePending(true);
-            else setNotice(`RBX Tools v${result.update.version} is available. Open Settings to update.`);
+            else showNotice(`RBX Tools v${result.update.version} is available.`, true);
           }
         })
         .catch((err) => {
@@ -237,14 +240,14 @@ export default function App() {
       if (!desktop) {
         await previewDelay();
         setStatus((current) => ({ ...current, steamRunning: true, steamOnline: true, blocked: false }));
-        setNotice("Steam restarted (preview only). No process was changed.");
+        showNotice("Steam restarted (preview only). No process was changed.");
         setRestartPhase("running");
         restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
         return;
       }
       const message = await restartSteam(force);
       setStatus(await getStatus());
-      setNotice(message);
+      showNotice(message);
       setRestartPhase("running");
       restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
     });
@@ -257,7 +260,7 @@ export default function App() {
         await previewDelay();
         const blocked = !status.blocked;
         setStatus((current) => ({ ...current, blocked, steamOnline: !blocked && current.steamRunning }));
-        setNotice(blocked
+        showNotice(blocked
           ? "Steam network paused (preview only). No traffic was changed."
           : "Steam network restored (preview only). No traffic was changed.");
         return;
@@ -267,7 +270,7 @@ export default function App() {
       const message = next.blocked
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
-      setNotice(message);
+      showNotice(message);
     });
   }
 
@@ -275,10 +278,10 @@ export default function App() {
     void action("privacy", async () => {
       if (!desktop) {
         await previewDelay();
-        setNotice("Preview only. The desktop app signs in to Steam and automatically sets and verifies Spacewar privacy. No account was changed.");
+        showNotice("Preview only. The desktop app signs in to Steam and automatically sets and verifies Spacewar privacy. No account was changed.");
         return;
       }
-      setNotice(await makeSpacewarPrivate());
+      showNotice(await makeSpacewarPrivate());
     });
   }
 
@@ -286,16 +289,16 @@ export default function App() {
     void action("check-update", async () => {
       if (!desktop) {
         await previewDelay();
-        setNotice("Update check complete (preview only). No update was installed.");
+        showNotice("Update check complete (preview only). No update was installed.");
         return;
       }
       try {
         const result = await getUpdate();
         setAvailableUpdate(result.update);
         setUpdateError(null);
-        setNotice(result.update
+        showNotice(result.update
           ? `Version ${result.update.version} is ready to install.`
-          : "RBX Tools is up to date.");
+          : "RBX Tools is up to date.", !!result.update);
       } catch (err) {
         setUpdateError(String(err));
         throw err;
@@ -319,13 +322,13 @@ export default function App() {
       if (!desktop) {
         await previewDelay();
         setStatus((current) => ({ ...current, steamPath: previewSteamPath, targetPath: previewSteamPath }));
-        setNotice("Demo steam.exe selected (preview only). No file was accessed.");
+        showNotice("Demo steam.exe selected (preview only). No file was accessed.");
         return;
       }
       const next = await pickExecutable("steam");
       if (next) {
         setStatus(next);
-        setNotice("Steam location updated.");
+      showNotice("Steam location updated.");
       }
     });
   }
@@ -358,7 +361,7 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setModal("settings")}>
-            <Settings2 size={17} /> {availableUpdate ? "Settings · Update ready" : "Settings"}
+            <Settings2 size={17} /> Settings
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
@@ -391,7 +394,6 @@ export default function App() {
                   <div className="tool-body">
                     <div className="tool-title">
                       <h2>Steamy Friends</h2>
-                      <ChevronRight size={21} />
                     </div>
                     <p>Restart Steam or briefly pause its network connection.</p>
                     <div className="tool-tags">
@@ -496,7 +498,10 @@ export default function App() {
           {notice && (
             <div role="status" className="toast success">
               <Check size={17} />
-              <span>{notice}</span>
+              <span>{notice.message}</span>
+              {notice.update && availableUpdate && (
+                <button className="small-button toast-update" disabled={!!busy} onClick={installGithubUpdate}>Update</button>
+              )}
               <button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
             </div>
           )}

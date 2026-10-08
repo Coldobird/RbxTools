@@ -122,18 +122,19 @@ button:disabled { opacity: .62; }
 .status-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: #efd0bd; }
 .nav-item > .status-icon { margin-left: auto; }
 .status-icon.running, .status-icon.connected { color: #bed79e; }
-.status-icon.running, .status-icon.connected { animation: status-icon-expire 5s linear forwards; }
-.network-card .status-icon.connected { animation: none; }
+.sidebar .nav-item > .status-icon.running, .sidebar .nav-item > .status-icon.connected { animation: status-icon-expire 5s linear forwards; }
 @keyframes status-icon-expire { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 .status-icon.restarting, .status-icon.connecting { color: #ffd0bc; }
 .status-icon.blocked { color: #ffd294; }
 .restart-spin { animation: pixel-restart-spin 1.2s steps(8, end) infinite; transform-origin: center; }
 @keyframes pixel-restart-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .restart-spin, .status-icon.running, .status-icon.connected { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .restart-spin, .sidebar .nav-item > .status-icon.running, .sidebar .nav-item > .status-icon.connected { animation: none; } }
 .toast { border: 2px solid #c56673; border-radius: 0; background: #512733; color: #ffdbc9; font-size: 12px; box-shadow: inset 2px 2px #79404b, 4px 5px #190e15; }
 .toast.error { border-color: #df8c72; color: #ffe0cb; background: #59303a; }
 .toast.success { border-color: #a5bd82; color: #e2efc7; background: #384031; }
 .toast button { color: inherit; }
+.toast .toast-update { padding: 4px 8px; background: #a14856; border: 2px solid #d97b82; color: #ffe1cc; }
+.toast .toast-update:not(:disabled):hover { background: #c35b68; }
 .activity-content { border-color: #99535f; }
 .activity-empty, .log-row, .log-row time { color: #ebc1b6; }
 .tool-art { background: #512733; border-color: #c56673; }
