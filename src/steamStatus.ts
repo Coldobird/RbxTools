@@ -6,5 +6,5 @@ export function connectionLabel(status: Status): string {
   if (!status.steamRunning) return "Steam is not running";
   if (status.steamOnline === true) return "Steam online";
   if (status.steamOnline === false) return "Steam offline";
-  return "Connecting…";
+  return "Steam connection unavailable";
 }

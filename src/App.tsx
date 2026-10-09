@@ -47,11 +47,11 @@ const initialStatus: Status = {
 const previewSteamPath = "C:\\Preview\\Steam\\steam.exe";
 const previewDelay = () => new Promise<void>((resolve) => window.setTimeout(resolve, 650));
 
-type IconState = "restarting" | "connecting" | "running" | "blocked" | "connected" | null;
+type IconState = "restarting" | "connecting" | "running" | "blocked" | "connected" | "unknown" | null;
 
 function StatusIcon({ state, label }: { state: IconState; label: string }) {
   if (!state) return null;
-  const Icon = state === "connecting" ? LoaderCircle : state === "restarting" ? RotateCw : state === "running" ? Play : state === "blocked" ? WifiOff : Wifi;
+  const Icon = state === "connecting" ? LoaderCircle : state === "restarting" ? RotateCw : state === "running" ? Play : state === "blocked" ? WifiOff : state === "unknown" ? CircleAlert : Wifi;
   return <span className={`status-icon ${state}`} role="img" aria-label={label} title={label}><Icon size={17} className={state === "restarting" ? "restart-spin" : undefined} /></span>;
 }
 
@@ -85,7 +85,7 @@ export default function App() {
   }, []);
 
   const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "running" && status.steamRunning ? "running" : null;
-  const networkIcon: IconState = status.blocked ? "blocked" : loading || status.steamRunning && status.steamOnline === null ? "connecting" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
+  const networkIcon: IconState = status.blocked ? "blocked" : loading ? "connecting" : status.steamRunning && status.steamOnline === null ? "unknown" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
   const toolIcon: IconState = restartPhase === "restarting" ? "restarting" : networkIcon ?? restartIcon;
 
   const toolState = error
@@ -99,7 +99,7 @@ export default function App() {
         : status.steamOnline === true
           ? { label: "Steam online", className: "connected" }
         : status.steamRunning
-          ? { label: connectionLabel(status), className: status.steamOnline === null ? "busy" : "idle" }
+          ? { label: connectionLabel(status), className: "idle" }
           : status.steamPath
             ? { label: "Steam not running", className: "idle" }
             : { label: "Steam location needed", className: "setup" };

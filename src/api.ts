@@ -21,6 +21,7 @@ export interface UpdateCheck {
 }
 
 export const desktop = isTauri();
+const STATUS_TIMEOUT_MS = 8_000;
 const previewStatus: Status = {
   steamPath: null,
   steamRunning: false,
@@ -31,7 +32,40 @@ const previewStatus: Status = {
 };
 
 export async function getStatus(): Promise<Status> {
-  return desktop && !isUiTestActive() ? invoke("get_status") : previewStatus;
+  if (!desktop || isUiTestActive()) return previewStatus;
+
+  return new Promise<Status>((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      settled = true;
+      reject(new Error("Steam status check timed out after 8 seconds."));
+    }, STATUS_TIMEOUT_MS);
+
+    let request: Promise<Status>;
+    try {
+      request = invoke<Status>("get_status");
+    } catch (error) {
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+      return;
+    }
+
+    request.then(
+      (status) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(status);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function pickExecutable(

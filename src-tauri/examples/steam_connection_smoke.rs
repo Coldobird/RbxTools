@@ -12,6 +12,9 @@ use std::{
 };
 
 fn main() -> Result<(), String> {
+    if let Some(code) = steam_connection::run_helper_from_args() {
+        std::process::exit(code);
+    }
     if std::env::var_os("SteamAppId").is_some() || std::env::var_os("SteamGameId").is_some() {
         return Err("Refusing inherited game AppID environment.".into());
     }

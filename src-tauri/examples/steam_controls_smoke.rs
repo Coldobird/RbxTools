@@ -369,6 +369,9 @@ fn run(
 }
 
 fn main() -> Result<(), String> {
+    if let Some(code) = steam_connection::run_helper_from_args() {
+        std::process::exit(code);
+    }
     if let Some(code) = steam_reconnect::run_helper_from_args() {
         std::process::exit(code);
     }

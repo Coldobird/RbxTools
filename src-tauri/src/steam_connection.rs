@@ -2,11 +2,10 @@
 use std::{
     ffi::{c_char, c_void},
     path::Path,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Mutex,
-    },
-    time::Duration,
+    process::{Child, Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
+    time::{Duration, Instant},
 };
 use windows_sys::Win32::{
     Foundation::{FreeLibrary, HMODULE},
@@ -15,7 +14,6 @@ use windows_sys::Win32::{
         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
     },
 };
-static ACCESS: Mutex<()> = Mutex::new(());
 static QUERY_ACTIVE: AtomicBool = AtomicBool::new(false);
 type CreateInterface = unsafe extern "C" fn(*const c_char, *mut i32) -> *mut c_void;
 type CreatePipe = unsafe extern "system" fn(*mut c_void) -> i32;
@@ -114,54 +112,117 @@ impl Drop for Observer {
     }
 }
 
-fn query_online(path: &Path) -> Result<bool, String> {
-    // Pipe creation/release must not overlap on different status workers.
-    let _access = ACCESS
-        .lock()
-        .map_err(|_| "Steam connection check unavailable")?;
-    Observer::connect(path).map(|observer| observer.online())
+const HELPER_FLAG: &str = "--rbx-status-helper";
+
+// Dispatch before Tauri starts, so the helper never creates a window or game.
+pub fn run_helper_from_args() -> Option<i32> {
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_none_or(|arg| arg != HELPER_FLAG) {
+        return None;
+    }
+    if args.len() != 5 {
+        return Some(2);
+    }
+    let Ok(parent) = args[4].to_string_lossy().parse::<u32>() else {
+        return Some(2);
+    };
+    // Also reap a stalled helper if its parent crashes or exits before cleanup.
+    thread::spawn(move || {
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE},
+        };
+        unsafe {
+            let handle = OpenProcess(PROCESS_SYNCHRONIZE, 0, parent);
+            if !handle.is_null() {
+                WaitForSingleObject(handle, 3_000);
+                CloseHandle(handle);
+            }
+            std::process::exit(3);
+        }
+    });
+    let result = Observer::connect(Path::new(&args[2])).map(|observer| observer.online());
+    let code = if result.is_ok() { 0 } else { 1 };
+    let saved = serde_json::to_vec(&result)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| std::fs::write(&args[3], bytes).map_err(|e| e.to_string()));
+    Some(if saved.is_ok() { code } else { 2 })
 }
 
-fn bounded_query(
-    query: impl FnOnce() -> Result<bool, String> + Send + 'static,
-    active: &'static AtomicBool,
-    timeout: Duration,
+struct Helper(Child);
+impl Drop for Helper {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn wait_for_query(child: &mut Helper, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(exit) = child.0.try_wait().map_err(|e| e.to_string())? {
+            if exit.code().is_some_and(|code| code == 0 || code == 1) {
+                return Ok(());
+            }
+            return Err(format!(
+                "Steam connection helper exited unexpectedly ({exit})."
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err("Steam connection check timed out.".into());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn query_with_helper(path: &Path) -> Result<bool, String> {
+    let output = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let mut command = Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    command
+        .arg(HELPER_FLAG)
+        .arg(path)
+        .arg(output.path())
+        .arg(std::process::id().to_string())
+        .env_remove("SteamAppId")
+        .env_remove("SteamGameId")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let mut child = Helper(
+        command
+            .spawn()
+            .map_err(|e| format!("Could not check Steam connection: {e}"))?,
+    );
+    wait_for_query(&mut child, Duration::from_secs(2))?;
+    let bytes = std::fs::read(output.path()).map_err(|e| e.to_string())?;
+    serde_json::from_slice::<Result<bool, String>>(&bytes)
+        .map_err(|_| "Steam connection helper returned an invalid result.".to_string())?
+}
+
+fn single_query(
+    query: impl FnOnce() -> Result<bool, String>,
+    active: &AtomicBool,
 ) -> Result<bool, String> {
     if active.swap(true, Ordering::SeqCst) {
         return Err("Steam connection check is still pending.".into());
     }
-    let (send, receive) = mpsc::channel();
-    let spawned = std::thread::Builder::new()
-        .name("steam-connection".into())
-        .spawn(move || {
-            struct Reset(&'static AtomicBool);
-            impl Drop for Reset {
-                fn drop(&mut self) {
-                    self.0.store(false, Ordering::SeqCst);
-                }
-            }
-            let _reset = Reset(active);
-            let result = query();
-            let _ = send.send(result);
-        });
-    if let Err(error) = spawned {
-        active.store(false, Ordering::SeqCst);
-        return Err(format!("Could not check Steam connection: {error}"));
+    struct Reset<'a>(&'a AtomicBool);
+    impl Drop for Reset<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
     }
-    receive
-        .recv_timeout(timeout)
-        .map_err(|_| "Steam connection check timed out.".to_string())?
+    let _reset = Reset(active);
+    // The helper is killed and reaped before releasing the single-query guard.
+    query()
 }
 
 pub fn online(path: &Path) -> Result<bool, String> {
-    let path = path.to_path_buf();
-    // Native IPC can stall while traffic is blocked. Keep one query in flight,
-    // bound UI latency, and return unknown rather than a stale online result.
-    bounded_query(
-        move || query_online(&path),
-        &QUERY_ACTIVE,
-        Duration::from_secs(2),
-    )
+    if !path.is_file() {
+        return Err("Steam executable unavailable.".into());
+    }
+    single_query(|| query_with_helper(path), &QUERY_ACTIVE)
 }
 
 pub fn observed_online(path: Option<&Path>, running: bool, blocked: bool) -> Option<bool> {
@@ -184,35 +245,73 @@ mod tests {
         assert_eq!(observed_online(missing, true, false), None);
     }
 
-    #[test]
-    fn stalled_ipc_times_out_without_accumulating_workers() {
-        static ACTIVE: AtomicBool = AtomicBool::new(false);
-        let (release, wait) = mpsc::channel();
-        let result = bounded_query(
-            move || {
-                wait.recv().unwrap();
-                Ok(true)
-            },
-            &ACTIVE,
-            Duration::from_millis(30),
-        );
-        assert!(result.unwrap_err().contains("timed out"));
-        assert!(bounded_query(
-            || panic!("must not start another worker"),
-            &ACTIVE,
-            Duration::from_millis(30)
+    fn command_helper(script: &str) -> Helper {
+        use std::os::windows::process::CommandExt;
+        Helper(
+            Command::new("powershell.exe")
+                .args(["-NoProfile", "-Command", script])
+                .creation_flags(0x08000000)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
         )
-        .unwrap_err()
-        .contains("pending"));
-        release.send(()).unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
-        while ACTIVE.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
-            std::thread::yield_now();
+    }
+
+    #[test]
+    fn stalled_helper_is_reaped_and_next_query_can_run() {
+        let active = AtomicBool::new(false);
+        let mut child = command_helper("Start-Sleep -Seconds 30");
+        // Retain an independent handle to verify termination after RAII cleanup.
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS};
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, WaitForSingleObject};
+        unsafe {
+            let mut retained = std::ptr::null_mut();
+            assert_ne!(
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    child.0.as_raw_handle(),
+                    GetCurrentProcess(),
+                    &mut retained,
+                    0,
+                    0,
+                    DUPLICATE_SAME_ACCESS
+                ),
+                0
+            );
+            let started = Instant::now();
+            let result = single_query(
+                || {
+                    assert!(single_query(|| panic!("overlapping query"), &active)
+                        .unwrap_err()
+                        .contains("pending"));
+                    let result = wait_for_query(&mut child, Duration::from_millis(30));
+                    drop(child);
+                    result.map(|_| true)
+                },
+                &active,
+            );
+            assert!(result.unwrap_err().contains("timed out"));
+            assert!(started.elapsed() < Duration::from_secs(2));
+            assert_eq!(WaitForSingleObject(retained, 1000), 0);
+            CloseHandle(retained);
         }
-        assert!(!ACTIVE.load(Ordering::SeqCst));
-        assert_eq!(
-            bounded_query(|| Ok(false), &ACTIVE, Duration::from_secs(1)),
-            Ok(false)
+        assert!(!active.load(Ordering::SeqCst));
+        assert_eq!(single_query(|| Ok(false), &active), Ok(false));
+    }
+
+    #[test]
+    fn helper_crash_releases_query_guard() {
+        let active = AtomicBool::new(false);
+        let result = single_query(
+            || {
+                let mut child = command_helper("exit 7");
+                wait_for_query(&mut child, Duration::from_secs(5)).map(|_| true)
+            },
+            &active,
         );
+        assert!(result.unwrap_err().contains("unexpectedly"));
+        assert_eq!(single_query(|| Ok(true), &active), Ok(true));
     }
 }

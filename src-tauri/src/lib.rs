@@ -32,6 +32,7 @@ struct AppState {
     network_revision: AtomicU64,
     reconnect_assisting: AtomicBool,
     reconnect_error: Mutex<Option<String>>,
+    status_checking: AtomicBool,
     restarting: AtomicBool,
     privacy_changing: AtomicBool,
     updating: AtomicBool,
@@ -58,6 +59,7 @@ fn status(state: &AppState) -> Result<Status, String> {
         .lock()
         .map_err(|_| "Network state unavailable")?;
     let blocked = network.is_some();
+    drop(network);
     let online =
         steam_connection::observed_online(path.as_deref().map(Path::new), running, blocked);
     Ok(Status {
@@ -109,7 +111,25 @@ async fn run_blocking<T: Send + 'static>(
 
 #[tauri::command]
 async fn get_status(app: tauri::AppHandle) -> Result<Status, String> {
-    run_blocking(move || status(&app.state::<AppState>())).await
+    if app
+        .state::<AppState>()
+        .status_checking
+        .swap(true, Ordering::SeqCst)
+    {
+        return Err("Steam status check is still pending.".into());
+    }
+    run_blocking(move || {
+        let state = app.state::<AppState>();
+        struct Reset<'a>(&'a AtomicBool);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        let _reset = Reset(&state.status_checking);
+        status(&state)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -315,7 +335,9 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
             .lock()
             .map_err(|_| "Network timing unavailable")? = None;
         state.network_revision.fetch_add(1, Ordering::SeqCst);
-        steam_controls::restart(Path::new(&path), force, &mut network)
+        steam_controls::restore_network(&mut network)?;
+        drop(network);
+        steam::restart(Path::new(&path), force)
     })
     .await
     .map_err(|e| format!("Restart failed: {e}"))?
@@ -334,7 +356,9 @@ async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> 
         }
     }
     let _reset = Reset(&state.privacy_changing);
-    let steam_id = (|| -> Result<String, String> {
+    let blocking_app = app.clone();
+    let steam_id = run_blocking(move || -> Result<String, String> {
+        let state = blocking_app.state::<AppState>();
         if state.restarting.load(Ordering::SeqCst) {
             return Err("Wait for Steam to finish restarting.".into());
         }
@@ -354,7 +378,8 @@ async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> 
         }
         steam::active_steam_id()
             .ok_or_else(|| "Sign in to Steam before making Spacewar private.".into())
-    })()?;
+    })
+    .await?;
     spacewar_privacy::make_private(app.clone(), steam_id).await
 }
 
@@ -364,6 +389,10 @@ pub fn run_update_helper() -> Option<i32> {
 
 pub fn run_reconnect_helper() -> Option<i32> {
     steam_reconnect::run_helper_from_args()
+}
+
+pub fn run_status_helper() -> Option<i32> {
+    steam_connection::run_helper_from_args()
 }
 
 pub fn run() {
@@ -397,6 +426,7 @@ pub fn run() {
                 network_revision: AtomicU64::new(0),
                 reconnect_assisting: AtomicBool::new(false),
                 reconnect_error: Mutex::new(None),
+                status_checking: AtomicBool::new(false),
                 restarting: AtomicBool::new(false),
                 privacy_changing: AtomicBool::new(false),
                 updating: AtomicBool::new(false),

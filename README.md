@@ -36,6 +36,8 @@ Network blocking uses Windows Filtering Platform (WFP) with a **dynamic session*
 
 Steam restart is a deliberate, one-time action, not something that can be undone on app exit. The application remembers its Steam path preference in its per-user configuration folder. Steam's separate privacy browser profile retains its own sign-in cookies; the app never saves a local private-status flag as proof of the account setting.
 
+Steam status checks run in a separate, game-free helper process with a two-second deadline. A timed-out helper is terminated before another check can start. Failed checks show **Steam connection unavailable** and retry automatically; an unknown login state does not mean Steam is online or offline. The frontend also limits status requests to eight seconds without allowing backend checks to accumulate.
+
 ## Development
 
 Requirements: Windows 10/11 x64, Node.js 20+, Rust stable with the MSVC target, Visual Studio C++ Build Tools and Windows SDK, and WebView2.
