@@ -6,7 +6,7 @@
 
 [Download](https://github.com/Coldobird/RbxTools/releases/latest)
 
-<img src="docs/screenshots/steamy-friends.jpg" alt="Steamy Friends in RBX Tools" width="900">
+<img src="docs/screenshots/steamy-friends.png" alt="Steamy Friends in RBX Tools" width="900">
 
 </div>
 
@@ -37,18 +37,16 @@ Closing RBX Tools removes its network pause. Restarting or pausing Steam may int
 
 Choose the tool you want to use.
 
-<img src="docs/screenshots/tool-library.jpg" alt="RBX Tools library" width="900">
+<img src="docs/screenshots/tool-library.png" alt="RBX Tools library" width="900">
 
 ### Settings
 
 Find Steam, manage Spacewar privacy, and check for updates.
 
-<img src="docs/screenshots/settings.jpg" alt="RBX Tools settings" width="900">
+<img src="docs/screenshots/settings.png" alt="RBX Tools settings" width="520">
 
 </details>
 
 ## Stay up to date
 
 The app checks for updates automatically. Click **Update** when prompted, or check in **Settings**.
-
-<sub>Screenshots show preview mode with simulated Steam states.</sub>
