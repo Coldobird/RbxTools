@@ -1,5 +1,68 @@
 /* WebView2 supports WOFF2. Keep every bundled glyph and weight without duplicate WOFF files. */
 @font-face {
+  font-family: 'RBX Cartridge 10';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/rbx-cartridge-10.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 10';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/rbx-cartridge-10-semibold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 10';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../assets/fonts/rbx-cartridge-10-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 18';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/rbx-cartridge-18.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 18';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/rbx-cartridge-18-semibold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 18';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../assets/fonts/rbx-cartridge-18-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 26';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/rbx-cartridge-26.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 26';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/rbx-cartridge-26-semibold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge 26';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../assets/fonts/rbx-cartridge-26-bold.woff2') format('woff2');
+}
+@font-face {
   font-family: 'RBX Cartridge';
   font-style: normal;
   font-display: swap;

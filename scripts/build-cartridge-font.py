@@ -184,8 +184,8 @@ def bitmap(char, weight):
     return rows
 
 
-def pixel_set(rows):
-    return {(col * 100, (6 - row) * 100) for row, pixels in enumerate(rows)
+def pixel_set(rows, top=6):
+    return {(col * 100, (top - row) * 100) for row, pixels in enumerate(rows)
             for col, pixel in enumerate(pixels) if pixel == "1"}
 
 
@@ -229,17 +229,19 @@ def pair_gap(left_pixels, right_pixels, left_advance, adjustment):
     return min(gaps) if gaps else None
 
 
-def build_font(weight, style, filename):
-    font = FontBuilder(800, isTTF=True)
+def build_font(weight, style, filename, *, pixel_em=8, family="RBX Cartridge",
+               rows_for_glyph=bitmap, spacing_pixels=1, descent_pixels=1):
+    font = FontBuilder(pixel_em * 100, isTTF=True)
+    ascent = pixel_em - descent_pixels
     font.setupGlyphOrder([".notdef", *cmap.values()])
     font.setupCharacterMap(cmap)
     glyphs, metrics, pixels_by_char = {}, {}, {}
     digit_advance = (max(len(row) for digit in "0123456789"
-                        for row in bitmap(digit, weight)) + 1) * 100
+                        for row in rows_for_glyph(digit, weight)) + spacing_pixels) * 100
     for char, name in [(None, ".notdef"), *[(c, cmap[ord(c)]) for c in PATTERNS]]:
-        rows = bitmap(char, weight)
+        rows = rows_for_glyph(char, weight)
         assert len({len(row) for row in rows}) == 1
-        pixels_by_char[char] = pixel_set(rows)
+        pixels_by_char[char] = pixel_set(rows, ascent - 1)
         pen = TTGlyphPen(None)
         for row, pixels in enumerate(rows):
             # Join adjacent pixels into runs so there are no internal seams.
@@ -248,7 +250,7 @@ def build_font(weight, style, filename):
                 if pixel == "1" and start is None:
                     start = col
                 elif pixel == "0" and start is not None:
-                    x, right, y = start * 100, col * 100, (6 - row) * 100
+                    x, right, y = start * 100, col * 100, (ascent - 1 - row) * 100
                     pen.moveTo((x, y)); pen.lineTo((x, y + 100))
                     pen.lineTo((right, y + 100)); pen.lineTo((right, y)); pen.closePath()
                     start = None
@@ -261,21 +263,22 @@ def build_font(weight, style, filename):
                     assembly.extend(["PUSHW[ ]", str(point), "MDAP[1]"])
             glyph.program = Program(); glyph.program.fromAssembly(assembly)
         glyphs[name] = glyph
-        advance = digit_advance if char is not None and char in "0123456789" else (len(rows[0]) + 1) * 100
+        advance = digit_advance if char is not None and char in "0123456789" else (len(rows[0]) + spacing_pixels) * 100
         metrics[name] = (advance, 0)
     font.setupGlyf(glyphs)
     font.setupHorizontalMetrics(metrics)
-    font.setupHorizontalHeader(ascent=700, descent=-100)
+    font.setupHorizontalHeader(ascent=ascent * 100, descent=-descent_pixels * 100)
     weight_class = weight
     fs_selection = 0xC0 if weight == 400 else (0x80 if weight == 600 else 0xA0)
-    font.setupOS2(version=4, sTypoAscender=700, sTypoDescender=-100, sTypoLineGap=0,
-                  usWinAscent=700, usWinDescent=100, usWeightClass=weight_class,
+    font.setupOS2(version=4, sTypoAscender=ascent * 100, sTypoDescender=-descent_pixels * 100, sTypoLineGap=0,
+                  usWinAscent=ascent * 100, usWinDescent=descent_pixels * 100, usWeightClass=weight_class,
                   fsSelection=fs_selection)
     ps_style = style.replace(" ", "")
-    font.setupNameTable({"familyName": "RBX Cartridge", "styleName": style,
-        "uniqueFontIdentifier": f"RBXCartridge1.0-{ps_style}",
-        "fullName": f"RBX Cartridge {style}" if weight != 400 else "RBX Cartridge",
-        "psName": f"RBXCartridge-{ps_style}", "version": "Version 1.0"})
+    ps_family = family.replace(" ", "")
+    font.setupNameTable({"familyName": family, "styleName": style,
+        "uniqueFontIdentifier": f"{ps_family}1.0-{ps_style}",
+        "fullName": f"{family} {style}" if weight != 400 else family,
+        "psName": f"{ps_family}-{ps_style}", "version": "Version 1.0"})
     font.setupPost()
     font.font["head"].macStyle = 0x1 if weight == 700 else 0
     font.font["maxp"].maxZones = 1
@@ -303,38 +306,43 @@ def build_font(weight, style, filename):
     return output, pairs, pixels_by_char, metrics
 
 
-builds = [
-    (400, "Regular", "rbx-cartridge.woff2"),
-    (600, "Semibold", "rbx-cartridge-semibold.woff2"),
-    (700, "Bold", "rbx-cartridge-bold.woff2"),
-]
-results = [build_font(*args) for args in builds]
-coverage = None
-for (weight, style, filename), (output, pairs, pixels, metrics) in zip(builds, results):
-    check = TTFont(output)
-    current_coverage = set(check.getBestCmap())
-    assert all(c in current_coverage for c in range(32, 127))
-    assert coverage is None or current_coverage == coverage
-    coverage = current_coverage
-    assert check["OS/2"].usWeightClass == weight
-    assert len({check["hmtx"][cmap[ord(c)]][0] for c in "0123456789"}) == 1
-    if weight == 600:
-        assert check["OS/2"].fsSelection & 0x40 == 0
-    if weight == 700:
-        assert check["head"].macStyle & 0x1
-    for name in check.getGlyphOrder():
-        glyph = check["glyf"][name]
-        if glyph.numberOfContours:
-            assert all(x % 100 == 0 and y % 100 == 0 for x, y in glyph.coordinates)
-    for left, right in pairs:
-        gap = pair_gap(pixels[left], pixels[right], metrics[cmap[ord(left)]][0], -100)
-        assert gap is None or gap >= 100
-    print(f"{style} ({weight}): {output.name}; kerning: " +
-          (", ".join(left + right for left, right in pairs) or "none"))
-    assert results[0][2] != results[1][2] and results[1][2] != results[2][2]
-for char, source in PATTERNS.items():
-    original_holes = enclosed_pixel_regions(source.split("/"))
-    if original_holes:
-        assert enclosed_pixel_regions(bitmap(char, 600)) >= original_holes
-        assert enclosed_pixel_regions(bitmap(char, 700)) >= original_holes
-print(f"RBX Cartridge: {len(cmap)} glyphs; shared coverage, tabular digits, whole-pixel grid verified")
+def main():
+    builds = [
+        (400, "Regular", "rbx-cartridge.woff2"),
+        (600, "Semibold", "rbx-cartridge-semibold.woff2"),
+        (700, "Bold", "rbx-cartridge-bold.woff2"),
+    ]
+    results = [build_font(*args) for args in builds]
+    coverage = None
+    for (weight, style, filename), (output, pairs, pixels, metrics) in zip(builds, results):
+        check = TTFont(output)
+        current_coverage = set(check.getBestCmap())
+        assert all(c in current_coverage for c in range(32, 127))
+        assert coverage is None or current_coverage == coverage
+        coverage = current_coverage
+        assert check["OS/2"].usWeightClass == weight
+        assert len({check["hmtx"][cmap[ord(c)]][0] for c in "0123456789"}) == 1
+        if weight == 600:
+            assert check["OS/2"].fsSelection & 0x40 == 0
+        if weight == 700:
+            assert check["head"].macStyle & 0x1
+        for name in check.getGlyphOrder():
+            glyph = check["glyf"][name]
+            if glyph.numberOfContours:
+                assert all(x % 100 == 0 and y % 100 == 0 for x, y in glyph.coordinates)
+        for left, right in pairs:
+            gap = pair_gap(pixels[left], pixels[right], metrics[cmap[ord(left)]][0], -100)
+            assert gap is None or gap >= 100
+        print(f"{style} ({weight}): {output.name}; kerning: " +
+              (", ".join(left + right for left, right in pairs) or "none"))
+        assert results[0][2] != results[1][2] and results[1][2] != results[2][2]
+    for char, source in PATTERNS.items():
+        original_holes = enclosed_pixel_regions(source.split("/"))
+        if original_holes:
+            assert enclosed_pixel_regions(bitmap(char, 600)) >= original_holes
+            assert enclosed_pixel_regions(bitmap(char, 700)) >= original_holes
+    print(f"RBX Cartridge: {len(cmap)} glyphs; shared coverage, tabular digits, whole-pixel grid verified")
+
+
+if __name__ == '__main__':
+    main()

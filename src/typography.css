@@ -8,7 +8,7 @@
   --font-description: 8px;
   --font-status: 8px;
   --font-caption: 8px;
-  --font-version: 6px;
+  --font-version: 8px;
   --font-field-label: 8px;
   --font-setting-title: 8px;
   --font-footnote: 8px;
@@ -164,11 +164,40 @@
 
 .nav-count,
 .tool-tags > span { font-size: var(--font-caption); }
-.modal-footnote { font-size: var(--font-footnote); }
-.sidebar-version { font-family: "RBX Micro", monospace; font-size: var(--font-version); line-height: 2; }
+.modal-footnote { font-family: "RBX Cartridge", "Press Start 2P", monospace; font-size: var(--font-footnote); }
+.sidebar-version { font-family: "RBX Cartridge", "Press Start 2P", monospace; font-size: var(--font-version); line-height: 2; }
 .setting-row strong { font-size: var(--font-setting-title); }
 .ui-test-panel { font-size: var(--font-field-label); }
 .slot-icon { font-size: 19.2px; }
+
+/* Each larger role uses outlines drawn for its own native pixel size.
+   The UI uses this scale by default; test view can preview 8/16/24px. */
+.app-shell[data-type-size="large"] {
+  --pixel: "RBX Cartridge 10", "Press Start 2P", monospace;
+  --font-body: 10px;
+  --font-navigation: 10px;
+  --font-action: 10px;
+  --font-card-title: 18px;
+  --font-modal-title: 18px;
+  --font-description: 10px;
+  --font-status: 10px;
+  --font-caption: 10px;
+  --font-field-label: 10px;
+  --font-setting-title: 10px;
+  --font-footnote: 8px;
+  --font-page-title: 26px;
+  --font-brand: 18px;
+  font-family: var(--pixel);
+  font-size: var(--font-body);
+}
+.app-shell[data-type-size="large"] :is(.brand strong, .tool-title h2, .control-card h2, .empty-slot h2, .modal h2) {
+  font-family: "RBX Cartridge 18", "Press Start 2P", monospace;
+  line-height: 28px;
+}
+.app-shell[data-type-size="large"] .page-heading h1 {
+  font-family: "RBX Cartridge 26", "Press Start 2P", monospace;
+  line-height: 40px;
+}
 
 @media (max-width: 1000px) {
   :root { --font-brand: 16px; }
@@ -176,4 +205,7 @@
 @media (max-width: 760px) {
   :root { --font-brand: 8px; --font-page-title: 16px; }
   .brand strong { font-weight: 400; }
+  .app-shell[data-type-size="large"] { --font-brand: 10px; --font-page-title: 18px; }
+  .app-shell[data-type-size="large"] .brand strong { font-family: var(--pixel); line-height: 20px; }
+  .app-shell[data-type-size="large"] .page-heading h1 { font-family: "RBX Cartridge 18", "Press Start 2P", monospace; line-height: 28px; }
 }

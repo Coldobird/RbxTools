@@ -59,6 +59,7 @@ function StatusIcon({ state, label }: { state: IconState; label: string }) {
 export default function App() {
   const [testView, setTestView] = useState(isUiTestActive);
   const [testPanelOpen, setTestPanelOpen] = useState(true);
+  const [testTypeSize, setTestTypeSize] = useState("large");
   const [testSteamState, setTestSteamState] = useState<TestSteamState>("online");
   const liveDesktop = desktop && !testView;
   const [page, setPage] = useState<Page>("library");
@@ -391,7 +392,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-type-size={testView ? testTypeSize : "large"}>
       {testView && (
         <aside className={`ui-test-panel ${testPanelOpen ? "" : "collapsed"}`} aria-label="UI test controls">
           <div className="ui-test-heading">
@@ -402,6 +403,7 @@ export default function App() {
           {testPanelOpen && (
             <>
               <p>Simulated actions only. Ctrl+Shift+T exits.</p>
+              <label><span className="ui-label">Text sizes</span><select aria-label="Text sizes" value={testTypeSize} onChange={(event) => setTestTypeSize(event.target.value)}><option value="classic">8 / 16 / 24 px</option><option value="large">10 / 18 / 26 px</option></select></label>
               <label><span className="ui-label">Page</span><select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
               <label><span className="ui-label">Steam state</span><select aria-label="Steam state" value={testSteamState} onChange={(event) => {
                 const state = event.target.value as TestSteamState;

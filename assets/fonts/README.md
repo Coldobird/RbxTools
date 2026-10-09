@@ -10,8 +10,8 @@ digits keep equal widths.
 Regular (400), Semibold (600), and Bold (700) are separate font files with
 distinct pixel outlines. The heavier weights expand stems while preserving
 counter spaces. Pair spacing is stored in the GPOS kern feature and enabled
-with `font-kerning: normal`. CSS applies bold to the brand, page/dialog titles,
-and semibold to card titles. Weights 600/700 are reserved for roles at 16px
+with `font-kerning: normal`. CSS currently applies semibold to the brand,
+page/dialog titles, and card titles. Weights 600/700 are reserved for roles at 16px
 and above: 8px actions, navigation, setting labels, and body copy use regular
 to keep their small counters legible. The compact 8px brand also uses regular.
 Headings and controls use zero
@@ -19,13 +19,33 @@ extra tracking so their font-level pair spacing remains effective.
 
 The font contains 104 glyphs covering printable ASCII, smart quotes, dashes,
 ellipsis, and middle dot. Unmodified Press Start 2P is retained as a fallback
-for other scripts and accented characters. The small sidebar footer uses the
-original RBX Micro alphabet described below.
+for other scripts and accented characters. The sidebar and Settings version text
+use the original cartridge font at 8px.
 
 Rebuild with `python scripts/build-cartridge-font.py` (requires fonttools and
 brotli). Its validation checks printable ASCII coverage, digit widths, and
 pixel-grid coordinates. The checked-in WOFF2 is used directly by normal builds.
 Use 8, 16, or 24px to preserve the native grid at 100% zoom.
+
+## Additional native sizes: 10, 18, and 26px
+
+The UI uses 10/18/26px by default. In UI test view, **Text sizes** switches
+between this set and the preserved 8/16/24px scale. Exiting test view returns
+to 10/18/26px.
+
+The additional families are `RBX Cartridge 10`, `RBX Cartridge 18`, and
+`RBX Cartridge 26`, each with separate 400/600/700 files. Use each family at
+the exact matching CSS size (or an integer multiple). The 10px alphabet is
+redrawn with nine-row capitals and six-row lowercase bodies; 18/26px letters
+extend stem rows while retaining uniform 2/3px strokes. This avoids uneven
+fractional scaling of the original alphabet. Heavier weights duplicate
+columns while preserving blank counters. Small UI roles still use regular.
+
+Rebuild with `python scripts/build-cartridge-optical-fonts.py`. This writes
+only the nine additional WOFF2 files. It validates shared glyph coverage,
+weight metadata, whole-pixel coordinates and advances, distinct weights,
+and enclosed counter preservation. Preview at 100% zoom; OS/browser scaling
+can still resample any pixel font. The original font binaries are preserved.
 
 ## Earlier RBX Pixel experiment (not used by the UI)
 
@@ -51,8 +71,8 @@ Transparent text wrappers also threshold their alpha through an SVG filter,
 because Chromium may smooth font edges regardless of the gasp request. This
 keeps the font's color and makes its edge pixels fully on or off.
 
-RBX Micro is a separate, original 3x5-pixel alphabet used at 6px for the sidebar
-version. Rebuild it with `python scripts/build-micro-font.py`. Its glyph source
+RBX Micro is a separate, original 3x5-pixel alphabet retained as an unused
+asset. Rebuild it with `python scripts/build-micro-font.py`. Its glyph source
 is in the generator; it is not a scaled-down derivative of the larger font.
 
 Regenerate with `python scripts/build-pixel-font.py` after `npm ci` and
