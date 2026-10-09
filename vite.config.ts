@@ -11,5 +11,7 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**", "**/*.tsbuildinfo"] },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
-  build: { target: "es2021" },
+  // Desktop CSP permits self-hosted fonts, so small WOFF2 assets must stay
+  // as files instead of becoming blocked data: URLs in production CSS.
+  build: { target: "es2021", assetsInlineLimit: 0 },
 });
