@@ -1,21 +1,139 @@
 /* Sizes belong to UI roles, so equivalent elements stay consistent. */
 :root {
-  --font-body: 8.6px;
-  --font-navigation: 8.6px;
-  --font-action: 9px;
-  --font-card-title: 14px;
-  --font-modal-title: 18px;
-  --font-description: 8.6px;
-  --font-status: 7.6px;
-  --font-caption: 7.2px;
-  --font-version: 6.2px;
-  --font-field-label: 9.6px;
-  --font-setting-title: 10.6px;
-  --font-footnote: 7.2px;
-  --font-page-title: clamp(20px, 2.3vw, 29px);
+  --font-body: 8px;
+  --font-navigation: 8px;
+  --font-action: 8px;
+  --font-card-title: 16px;
+  --font-modal-title: 16px;
+  --font-description: 8px;
+  --font-status: 8px;
+  --font-caption: 8px;
+  --font-version: 6px;
+  --font-field-label: 8px;
+  --font-setting-title: 8px;
+  --font-footnote: 8px;
+  --font-page-title: 24px;
   --font-brand: 16px;
+  --tracking-body: 1px;
+  --tracking-heading: 0px;
+  --tracking-control: 0px;
   font-size: var(--font-body);
+  line-height: 2;
+  letter-spacing: var(--tracking-body);
+  font-weight: 400;
+  font-kerning: normal;
 }
+
+/* Chromium can antialias TrueType text even when the font requests grid-fit
+   rendering. Threshold the text alpha to retain solid, square pixel edges.
+   Apply only to transparent text wrappers, never panels or backgrounds. */
+.pixel-type-filters { position: absolute; pointer-events: none; }
+.brand strong,
+.page-heading h1,
+.tool-title h2,
+.control-card h2,
+.control-card > p,
+.tool-body > p,
+.empty-slot h2,
+.empty-slot p,
+.ui-label,
+.art-status .tool-status,
+.control-status .tool-status,
+.modal h2,
+.modal-intro,
+.setting-row strong,
+.setting-row p,
+.modal-footnote,
+.sidebar-version > span,
+.tool-tags > span { filter: url(#pixel-type); }
+
+/* The outlines use an 8-pixel em. Multiples of eight give each design
+   pixel a whole screen pixel at 100% zoom; integer baselines avoid blur. */
+.brand strong,
+.ui-label,
+.tool-page-heading h1,
+.modal-heading h2 { transform: none; }
+
+/* Avoid quarter-pixel text origins when two fractional-width cards center
+   odd-width labels. Keep ordinary sizing as a fallback for older WebViews. */
+@supports (width: calc-size(max-content, round(up, size, 2px))) {
+  .primary-button > .ui-label,
+  .secondary-button > .ui-label,
+  .small-button > .ui-label,
+  .text-button > .ui-label {
+    width: calc-size(max-content, round(up, size, 2px));
+    text-align: left;
+  }
+}
+@supports (width: round(down, 10px, 2px)) {
+  @media (min-width: 761px) {
+    .control-grid { grid-template-columns: repeat(2, round(down, calc((100% - 20px) / 2), 2px)); }
+  }
+}
+
+.brand strong,
+.page-heading h1,
+.tool-title h2,
+.control-card h2,
+.empty-slot h2,
+.modal-heading h2 { line-height: 1.5; }
+
+.page-heading p,
+.tool-body > p,
+.control-card > p,
+.empty-slot p,
+.modal .modal-intro,
+.setting-row p,
+.primary-button,
+.secondary-button,
+.small-button { line-height: 2; }
+
+/* Whole-pixel tracking opens up the compact alphabet without putting each
+   successive glyph on a fractional pixel. Keep role values easy to tune. */
+.brand strong,
+.page-heading h1,
+.tool-title h2,
+.control-card h2,
+.empty-slot h2,
+.modal h2,
+.setting-row strong,
+.sidebar-version,
+.primary-button,
+.secondary-button,
+.small-button,
+.text-button,
+.tool-tags > span,
+.ui-test-panel strong {
+  letter-spacing: var(--tracking-control);
+  font-weight: 400;
+}
+
+.brand strong,
+.page-heading h1,
+.tool-title h2,
+.control-card h2,
+.empty-slot h2,
+.modal h2 { letter-spacing: var(--tracking-heading); }
+
+.brand strong,
+.page-heading h1,
+.modal h2 { font-weight: 600; }
+
+.tool-title h2,
+.control-card h2,
+.empty-slot h2 { font-weight: 600; }
+
+/* The 8px roles cannot reliably expose heavy-weight counters at native size.
+   Reserve 600/700 for the 16px+ title roles; do not synthesize small bold. */
+.setting-row strong,
+.nav-item,
+.primary-button,
+.secondary-button,
+.small-button { font-weight: 400; }
+
+.sidebar-version { letter-spacing: 0; }
+.sidebar .nav-item,
+.sidebar .text-button { letter-spacing: 0; }
 
 .brand strong { font-size: var(--font-brand); }
 .page-heading h1 { font-size: var(--font-page-title); }
@@ -47,14 +165,15 @@
 .nav-count,
 .tool-tags > span { font-size: var(--font-caption); }
 .modal-footnote { font-size: var(--font-footnote); }
-.sidebar-version { font-size: var(--font-version); }
+.sidebar-version { font-family: "RBX Micro", monospace; font-size: var(--font-version); line-height: 2; }
 .setting-row strong { font-size: var(--font-setting-title); }
 .ui-test-panel { font-size: var(--font-field-label); }
 .slot-icon { font-size: 19.2px; }
 
 @media (max-width: 1000px) {
-  :root { --font-brand: 13px; }
+  :root { --font-brand: 16px; }
 }
 @media (max-width: 760px) {
-  :root { --font-brand: 10px; --font-page-title: 18px; }
+  :root { --font-brand: 8px; --font-page-title: 16px; }
+  .brand strong { font-weight: 400; }
 }

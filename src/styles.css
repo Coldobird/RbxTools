@@ -6,7 +6,7 @@
   background: #111516;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
   color-scheme: dark;
   --accent: #ff6670;
   --accent-soft: #ff9aa2;
@@ -15,7 +15,7 @@
   --panel-strong: #2d1d21;
   --muted: #98a097;
   --border: #4c3035;
-  --pixel: "Press Start 2P", monospace;
+  --pixel: "RBX Cartridge", "Press Start 2P", monospace;
 }
 
 * {

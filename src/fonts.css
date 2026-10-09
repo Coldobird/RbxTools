@@ -1,4 +1,32 @@
 /* WebView2 supports WOFF2. Keep every bundled glyph and weight without duplicate WOFF files. */
+@font-face {
+  font-family: 'RBX Cartridge';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/rbx-cartridge-semibold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../assets/fonts/rbx-cartridge-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Cartridge';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/rbx-cartridge.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'RBX Micro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/rbx-micro.woff2') format('woff2');
+}
 /* press-start-2p-cyrillic-ext-400-normal */
 @font-face {
   font-family: 'Press Start 2P';
