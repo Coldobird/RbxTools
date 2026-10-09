@@ -1,7 +1,7 @@
 @import "tailwindcss" source("./");
 
 :root {
-  font-family: "DM Sans", sans-serif;
+  font-family: var(--pixel);
   color: #f1f2eb;
   background: #111516;
   font-synthesis: none;
@@ -78,7 +78,7 @@ p {
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 10;
-  width: 226px;
+  width: var(--sidebar-width);
   padding: 26px 18px 20px;
   display: flex;
   flex-direction: column;
@@ -107,7 +107,6 @@ p {
 
 .brand strong {
   font-family: var(--pixel);
-  font-size: 10px;
   letter-spacing: -0.35px;
   white-space: nowrap;
 }
@@ -128,7 +127,6 @@ p {
   background: transparent;
   border: 2px solid transparent;
   border-radius: 5px;
-  font-size: 12px;
   text-align: left;
 }
 
@@ -150,7 +148,6 @@ p {
   color: var(--accent-soft);
   background: #5a2c33;
   border-radius: 3px;
-  font-size: 9px;
   text-align: center;
 }
 
@@ -171,16 +168,15 @@ p {
   justify-content: space-between;
   padding: 22px 12px 0;
   color: #737b75;
-  font-size: 8px;
   letter-spacing: 1px;
 }
 
 .workspace {
   position: relative;
   isolation: isolate;
-  width: calc(100% - 226px);
+  width: calc(100% - var(--sidebar-width));
   min-height: 100vh;
-  margin-left: 226px;
+  margin-left: var(--sidebar-width);
   overflow: hidden;
   background:
     radial-gradient(circle at 80% 0%, #3a20251f, transparent 38%),
@@ -192,7 +188,7 @@ p {
   z-index: -1;
   right: 0;
   bottom: 0;
-  width: calc(100% - 226px);
+  width: calc(100% - var(--sidebar-width));
   height: min(66vh, 560px);
   opacity: 0.56;
   pointer-events: none;
@@ -221,14 +217,13 @@ main {
 
 .toast {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   padding: 13px 14px;
   border: 1px solid #593238;
   border-radius: 4px;
   background: #2c2023e8;
   color: #d7898f;
-  font-size: 12px;
   line-height: 1.6;
   box-shadow: 4px 5px 0 #190e15;
   pointer-events: auto;
@@ -236,14 +231,13 @@ main {
 
 .toast > svg {
   flex: 0 0 auto;
-  margin-top: 1px;
 }
 
-.toast span {
+.toast > span {
   flex: 1;
 }
 
-.toast button {
+.toast button:not(.small-button) {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -268,7 +262,6 @@ main {
 }
 
 .page-heading h1 {
-  font-size: clamp(26px, 3vw, 34px);
   font-weight: 650;
   letter-spacing: -1px;
   line-height: 1.2;
@@ -277,7 +270,6 @@ main {
 .page-heading p {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -384,7 +376,6 @@ main {
   align-items: center;
   gap: 7px;
   color: #e9a0a5;
-  font-size: 8px;
 }
 
 .tool-status {
@@ -434,7 +425,6 @@ main {
 }
 
 .tool-title h2 {
-  font-size: 23px;
   font-weight: 650;
   letter-spacing: -0.6px;
 }
@@ -447,7 +437,6 @@ main {
   max-width: 34ch;
   margin-top: 10px;
   color: #a8b0a6;
-  font-size: 12px;
   line-height: 1.75;
 }
 
@@ -460,12 +449,11 @@ main {
   border-top: 1px solid #503038;
 }
 
-.tool-tags span {
+.tool-tags > span {
   display: flex;
   align-items: center;
   gap: 6px;
   color: #d49297;
-  font-size: 9px;
 }
 
 .empty-slot {
@@ -490,12 +478,10 @@ main {
   color: #7b8a77;
   border: 1px dashed #566156;
   border-radius: 5px;
-  font-size: 24px;
 }
 
 .empty-slot h2 {
   color: #adb5aa;
-  font-size: 16px;
   font-weight: 500;
 }
 
@@ -503,7 +489,6 @@ main {
   max-width: 24ch;
   margin-top: 8px;
   color: #778277;
-  font-size: 11px;
   line-height: 1.8;
 }
 
@@ -573,7 +558,6 @@ main {
 }
 
 .control-card h2 {
-  font-size: 23px;
   font-weight: 600;
   letter-spacing: -0.55px;
 }
@@ -583,7 +567,6 @@ main {
   min-height: 43px;
   margin-top: 9px;
   color: #a7b0a4;
-  font-size: 12px;
   line-height: 1.75;
 }
 
@@ -594,7 +577,6 @@ main {
   align-items: center;
   gap: 9px;
   color: #d79499;
-  font-size: 10px;
 }
 
 .control-status .tool-status {
@@ -611,7 +593,6 @@ main {
   gap: 9px;
   padding: 10px 15px;
   border-radius: 4px;
-  font-size: 12px;
   font-weight: 650;
 }
 
@@ -646,7 +627,6 @@ main {
   gap: 6px;
   color: #d58288;
   background: transparent;
-  font-size: 10px;
 }
 
 .network-card.is-blocked {
@@ -709,7 +689,6 @@ main {
 
 .modal h2 {
   margin-top: 16px;
-  font-size: 25px;
   font-weight: 600;
   letter-spacing: -0.6px;
 }
@@ -717,7 +696,6 @@ main {
 .modal-intro {
   margin-top: 10px;
   color: #abb4a8;
-  font-size: 12px;
   line-height: 1.8;
 }
 
@@ -740,14 +718,12 @@ main {
 }
 
 .setting-row strong {
-  font-size: 12px;
   font-weight: 600;
 }
 
 .setting-row p {
   margin-top: 5px;
   color: #96a18f;
-  font-size: 10px;
   line-height: 1.65;
 }
 
@@ -762,7 +738,6 @@ main {
   background: #3b2428;
   border: 1px solid #744048;
   border-radius: 3px;
-  font-size: 10px;
 }
 
 .small-button:not(:disabled):hover {
@@ -772,7 +747,6 @@ main {
 .modal-footnote {
   margin-top: 23px;
   color: #7f8b7c;
-  font-size: 9px;
 }
 
 .modal-actions {
@@ -791,7 +765,7 @@ main {
 
 @media (max-width: 1000px) {
   .sidebar {
-    width: 190px;
+    width: var(--sidebar-width);
     padding-inline: 12px;
   }
 
@@ -805,16 +779,15 @@ main {
   }
 
   .brand strong {
-    font-size: 8px;
   }
 
   .workspace {
-    width: calc(100% - 190px);
-    margin-left: 190px;
+    width: calc(100% - var(--sidebar-width));
+    margin-left: var(--sidebar-width);
   }
 
   .world-backdrop {
-    width: calc(100% - 190px);
+    width: calc(100% - var(--sidebar-width));
   }
 
   main {
@@ -837,7 +810,7 @@ main {
 
 @media (max-width: 760px) {
   .sidebar {
-    width: 164px;
+    width: var(--sidebar-width);
   }
 
   .brand {
@@ -845,22 +818,20 @@ main {
   }
 
   .brand strong {
-    font-size: 7px;
   }
 
   .nav-item {
     padding: 10px 8px;
     gap: 7px;
-    font-size: 10px;
   }
 
   .workspace {
-    width: calc(100% - 164px);
-    margin-left: 164px;
+    width: calc(100% - var(--sidebar-width));
+    margin-left: var(--sidebar-width);
   }
 
   .world-backdrop {
-    width: calc(100% - 164px);
+    width: calc(100% - var(--sidebar-width));
   }
 
   main {

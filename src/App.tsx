@@ -396,21 +396,21 @@ export default function App() {
         <aside className={`ui-test-panel ${testPanelOpen ? "" : "collapsed"}`} aria-label="UI test controls">
           <div className="ui-test-heading">
             <Preview size={17} />
-            <strong>UI test view</strong>
-            <button className="small-button" onClick={() => setTestPanelOpen(!testPanelOpen)}>{testPanelOpen ? "Hide controls" : "Show controls"}</button>
+            <strong className="ui-label">UI test view</strong>
+            <button className="small-button" onClick={() => setTestPanelOpen(!testPanelOpen)}><span className="ui-label">{testPanelOpen ? "Hide controls" : "Show controls"}</span></button>
           </div>
           {testPanelOpen && (
             <>
               <p>Simulated actions only. Ctrl+Shift+T exits.</p>
-              <label>Page<select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
-              <label>Steam state<select aria-label="Steam state" value={testSteamState} onChange={(event) => {
+              <label><span className="ui-label">Page</span><select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
+              <label><span className="ui-label">Steam state</span><select aria-label="Steam state" value={testSteamState} onChange={(event) => {
                 const state = event.target.value as TestSteamState;
                 setTestSteamState(state);
                 setStatus(testSteamStatus(state));
                 setLoading(false);
                 setRestartPhase(null);
               }}>{testSteamStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
-              <label>Toast<select aria-label="Toast" value={error && notice ? "stacked" : error ? "error" : notice ? notice.update ? "update" : "success" : "none"} onChange={(event) => {
+              <label><span className="ui-label">Toast</span><select aria-label="Toast" value={error && notice ? "stacked" : error ? "error" : notice ? notice.update ? "update" : "success" : "none"} onChange={(event) => {
                 const choice = event.target.value;
                 setError(choice === "error" || choice === "stacked" ? "Steam could not reconnect. Check your connection and try again." : null);
                 setNotice(null);
@@ -420,12 +420,12 @@ export default function App() {
                   showNotice(`RBX Tools v${testUpdateVersion} is available.`, true);
                 }
               }}><option value="none">None</option><option value="success">Success</option><option value="error">Error</option><option value="update">Update with button</option><option value="stacked">Error + update stack</option></select></label>
-              <label>Modal<select aria-label="Modal" value={modal ?? "none"} onChange={(event) => {
+              <label><span className="ui-label">Modal</span><select aria-label="Modal" value={modal ?? "none"} onChange={(event) => {
                 const choice = event.target.value as "settings" | "force" | "update" | "none";
                 if (choice === "update") setAvailableUpdate({ version: testUpdateVersion });
                 setModal(choice === "none" ? null : choice);
               }}><option value="none">None</option><option value="settings">Settings</option><option value="update">Startup update</option><option value="force">Force restart confirmation</option></select></label>
-              <label>Busy state<select aria-label="Busy state" value={busy ?? (loading ? "status" : restartPhase === "restarting" ? "confirm-startup" : restartPhase === "running" ? "restart-complete" : "none")} onChange={(event) => {
+              <label><span className="ui-label">Busy state</span><select aria-label="Busy state" value={busy ?? (loading ? "status" : restartPhase === "restarting" ? "confirm-startup" : restartPhase === "running" ? "restart-complete" : "none")} onChange={(event) => {
                 const choice = event.target.value;
                 setBusy(["none", "status", "confirm-startup", "restart-complete"].includes(choice) ? null : choice);
                 setLoading(choice === "status");
@@ -435,13 +435,13 @@ export default function App() {
                   setTestSteamState("online");
                 }
               }}><option value="none">Idle</option><option value="status">Initial Steam check</option><option value="restart">Restarting Steam</option><option value="confirm-startup">Confirming startup</option><option value="restart-complete">Restart complete</option><option value="network">Changing network</option><option value="privacy">Spacewar privacy</option><option value="check-update">Checking updates</option><option value="install-update">Downloading update</option></select></label>
-              <label>Update state<select aria-label="Update state" value={updateError ? "error" : availableUpdate ? "available" : "current"} onChange={(event) => {
+              <label><span className="ui-label">Update state</span><select aria-label="Update state" value={updateError ? "error" : availableUpdate ? "available" : "current"} onChange={(event) => {
                 const choice = event.target.value;
                 setAvailableUpdate(choice === "current" ? null : { version: testUpdateVersion });
                 setUpdateError(choice === "error" ? "GitHub could not be reached. Try again." : null);
                 setUpdateFeedback(choice === "current" ? "RBX Tools is up to date." : null);
               }}><option value="available">Update available</option><option value="current">Up to date</option><option value="error">Update error</option></select></label>
-              <button className="small-button" onClick={toggleTestView}>Exit test view</button>
+              <button className="small-button" onClick={toggleTestView}><span className="ui-label">Exit test view</span></button>
             </>
           )}
         </aside>
@@ -457,22 +457,22 @@ export default function App() {
             className={page === "library" ? "nav-item active" : "nav-item"}
             onClick={() => setPage("library")}
           >
-            <Grid2X2 size={17} /> Tool Library
-            <span className="nav-count">1</span>
+            <Grid2X2 size={19} /> <span className="ui-label">Tool Library</span>
+            <span className="nav-count"><span className="ui-label">1</span></span>
           </button>
           <button
             className={page === "steamy" ? "nav-item active" : "nav-item"}
             onClick={() => setPage("steamy")}
           >
             <SteamFriendLogo small />
-            <span className="nav-tool-name">Steamy Friends</span>
+            <span className="nav-tool-name ui-label">Steamy Friends</span>
             <StatusIcon state={toolIcon} label={toolState.label} />
           </button>
         </nav>
 
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setModal("settings")}>
-            <Settings2 size={17} /> Settings
+            <Settings2 size={19} /> <span className="ui-label">Settings</span>
           </button>
           <div className="sidebar-version">
             <span>RBX TOOLS</span>
@@ -499,7 +499,7 @@ export default function App() {
                     <div className="friend-orbit"><SteamFriendLogo /></div>
                     <span className="art-status">
                       <StatusIcon state={toolIcon} label={toolState.label} />
-                      {toolState.label}
+                      <span className="ui-label">{toolState.label}</span>
                     </span>
                   </div>
                   <div className="tool-body">
@@ -508,14 +508,14 @@ export default function App() {
                     </div>
                     <p>Restart Steam or briefly pause its network connection.</p>
                     <div className="tool-tags">
-                      <span><RotateCw size={12} /> Restart Steam</span>
-                      <span><Wifi size={12} /> Network control</span>
+                      <span><RotateCw size={13} /> <span className="ui-label">Restart Steam</span></span>
+                      <span><Wifi size={13} /> <span className="ui-label">Network control</span></span>
                     </div>
                   </div>
                 </button>
 
                 <div className="empty-slot" aria-hidden="true">
-                  <div className="slot-icon">+</div>
+                  <div className="slot-icon"><span>+</span></div>
                   <h2>Room for more.</h2>
                   <p>The next useful little tool belongs here.</p>
                 </div>
@@ -538,7 +538,7 @@ export default function App() {
                   <p>Close Steam, then bring it right back for a fresh session.</p>
                   <div className="control-status">
                     <StatusIcon state={restartIcon} label={restartPhase === "restarting" ? "Restarting Steam" : "Steam running"} />
-                    {loading
+                    <span className="ui-label">{loading
                       ? "Checking Steam…"
                       : busy === "restart"
                         ? "Restarting Steam…"
@@ -548,18 +548,18 @@ export default function App() {
                         ? "Steam is running"
                         : status.steamPath
                           ? "Steam is not running"
-                          : "Steam location needed"}
+                          : "Steam location needed"}</span>
                   </div>
                   <button
                     className="primary-button"
                     disabled={!!busy || loading || !status.steamPath}
                     onClick={() => restart()}
                   >
-                    {busy === "restart" ? "Restarting Steam…" : "Restart Steam"}
+                    <span className="ui-label">{busy === "restart" ? "Restarting Steam…" : "Restart Steam"}</span>
                   </button>
                   <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
-                    <FolderOpen size={13} />
-                    {status.steamPath ? "Change Steam location" : "Locate steam.exe"}
+                    <FolderOpen size={15} />
+                    <span className="ui-label">{status.steamPath ? "Change Steam location" : "Locate steam.exe"}</span>
                   </button>
                 </section>
 
@@ -571,22 +571,22 @@ export default function App() {
                   <p>Pause incoming and outgoing traffic for Steam only.</p>
                   <div className="control-status">
                     <StatusIcon state={networkIcon} label={loading ? "Connecting…" : connectionLabel(status)} />
-                    {busy === "network"
+                    <span className="ui-label">{busy === "network"
                       ? status.blocked ? "Restoring connection…" : "Pausing connection…"
-                      : loading ? "Connecting…" : connectionLabel(status)}
+                      : loading ? "Connecting…" : connectionLabel(status)}</span>
                   </div>
                   <button
                     className={status.blocked ? "primary-button amber-button" : "secondary-button"}
                     disabled={!!busy || loading || !status.targetPath}
                     onClick={toggleNetwork}
                   >
-                    {busy === "network"
+                    <span className="ui-label">{busy === "network"
                       ? status.blocked ? "Restoring and reconnecting…" : "Pausing connection…"
-                      : status.blocked ? "Restore and reconnect" : "Stop network"}
+                      : status.blocked ? "Restore and reconnect" : "Stop network"}</span>
                   </button>
                   {!status.targetPath && (
                     <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
-                      <FolderOpen size={13} /> Locate steam.exe
+                      <FolderOpen size={15} /> <span className="ui-label">Locate steam.exe</span>
                     </button>
                   )}
                 </section>
@@ -602,16 +602,16 @@ export default function App() {
           {error && (
             <div role="alert" className="toast error">
               {desktop || testView ? <CircleAlert size={17} /> : <Preview size={17} />}
-              <span>{error}</span>
+              <span className="ui-label">{error}</span>
               <button aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button>
             </div>
           )}
           {notice && (
             <div role="status" className={notice.update ? "toast success update-notice" : "toast success"}>
               <Check size={17} />
-              <span>{notice.message}</span>
+              <span className="ui-label">{notice.message}</span>
               {notice.update && availableUpdate && (
-                <button className="small-button toast-update" disabled={!!busy} onClick={installGithubUpdate}>Update</button>
+                <button className="small-button toast-update" disabled={!!busy} onClick={installGithubUpdate}><span className="ui-label">Update</span></button>
               )}
               <button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={16} /></button>
             </div>
@@ -636,14 +636,16 @@ export default function App() {
 
             {modal === "settings" ? (
               <>
-                <Settings2 className="accent" size={25} />
-                <h2 id="modal-title">Settings</h2>
+                <div className="modal-heading">
+                  <Settings2 className="accent" size={26} />
+                  <h2 id="modal-title">Settings</h2>
+                </div>
                 <div className="setting-row">
                   <div>
                     <strong>Steam location</strong>
                     <p className="path-label">{status.steamPath ?? "Not detected yet"}</p>
                   </div>
-                  <button className="small-button" disabled={!!busy} onClick={chooseSteam}>Browse</button>
+                  <button className="small-button" disabled={!!busy} onClick={chooseSteam}><span className="ui-label">Browse</span></button>
                 </div>
                 <div className="setting-row" role="group" aria-labelledby="spacewar-privacy-title">
                   <div>
@@ -661,7 +663,7 @@ export default function App() {
                     disabled={!!busy || loading || status.blocked || ((liveDesktop || testView) && !status.steamRunning)}
                     onClick={openPrivacy}
                   >
-                    {busy === "privacy" ? "Waiting for Steam…" : "Make Spacewar private"}
+                    <span className="ui-label">{busy === "privacy" ? "Waiting for Steam…" : "Make private"}</span>
                   </button>
                 </div>
                 <div className="setting-row">
@@ -676,42 +678,46 @@ export default function App() {
                     disabled={!!busy}
                     onClick={availableUpdate ? installGithubUpdate : checkForUpdate}
                   >
-                    {busy === "install-update"
+                    <span className="ui-label">{busy === "install-update"
                       ? "Downloading…"
                       : busy === "check-update"
                         ? "Checking…"
                         : availableUpdate
-                          ? "Update and restart"
-                          : "Check for updates"}
+                          ? "Update"
+                          : "Check for updates"}</span>
                   </button>
                 </div>
-                <p className="modal-footnote">RBX Tools v{appVersion} · {testView ? "UI test view · simulated actions" : desktop ? "Windows desktop edition" : "Browser preview · no system changes"}</p>
+                <p className="modal-footnote">RBX Tools v{appVersion}{!testView && ` · ${desktop ? "Windows desktop edition" : "Browser preview · no system changes"}`}</p>
               </>
             ) : modal === "update" ? (
               <>
-                <RotateCw className="accent" size={26} />
-                <h2 id="modal-title">Update available</h2>
+                <div className="modal-heading">
+                  <RotateCw className="accent" size={26} />
+                  <h2 id="modal-title">Update available</h2>
+                </div>
                 <p className="modal-intro">
                   RBX Tools v{availableUpdate?.version} is ready. Update from GitHub and restart the app to finish installing.
                 </p>
                 {updateError && <p role="alert" className="modal-intro">{updateError}</p>}
                 <div className="modal-actions">
-                  <button className="secondary-button" disabled={busy === "install-update"} onClick={() => setModal(null)}>Cancel</button>
+                  <button className="secondary-button" disabled={busy === "install-update"} onClick={() => setModal(null)}><span className="ui-label">Cancel</span></button>
                   <button className="primary-button" disabled={!!busy || !availableUpdate} onClick={installGithubUpdate}>
-                    {busy === "install-update" ? "Downloading…" : "Update"}
+                    <span className="ui-label">{busy === "install-update" ? "Downloading…" : "Update"}</span>
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <RotateCw className="accent" size={26} />
-                <h2 id="modal-title">Force restart Steam?</h2>
+                <div className="modal-heading">
+                  <RotateCw className="accent" size={26} />
+                  <h2 id="modal-title">Force restart Steam?</h2>
+                </div>
                 <p className="modal-intro">
                   Force-close Steam and restart it with network access restored? This can interrupt downloads and cloud sync.
                 </p>
                 <div className="modal-actions">
-                  <button className="secondary-button" onClick={() => setModal(null)}>Cancel</button>
-                  <button className="primary-button" onClick={() => restart(true)}>Force restart</button>
+                  <button className="secondary-button" onClick={() => setModal(null)}><span className="ui-label">Cancel</span></button>
+                  <button className="primary-button" onClick={() => restart(true)}><span className="ui-label">Force restart</span></button>
                 </div>
               </>
             )}

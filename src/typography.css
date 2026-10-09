@@ -1,0 +1,60 @@
+/* Sizes belong to UI roles, so equivalent elements stay consistent. */
+:root {
+  --font-body: 8.6px;
+  --font-navigation: 8.6px;
+  --font-action: 9px;
+  --font-card-title: 14px;
+  --font-modal-title: 18px;
+  --font-description: 8.6px;
+  --font-status: 7.6px;
+  --font-caption: 7.2px;
+  --font-version: 6.2px;
+  --font-field-label: 9.6px;
+  --font-setting-title: 10.6px;
+  --font-footnote: 7.2px;
+  --font-page-title: clamp(20px, 2.3vw, 29px);
+  --font-brand: 16px;
+  font-size: var(--font-body);
+}
+
+.brand strong { font-size: var(--font-brand); }
+.page-heading h1 { font-size: var(--font-page-title); }
+.nav-item { font-size: var(--font-navigation); }
+.nav-tool-name { font-size: inherit; }
+
+.primary-button,
+.secondary-button,
+.small-button,
+.text-button { font-size: var(--font-action); }
+
+.tool-title h2,
+.control-card h2,
+.empty-slot h2 { font-size: var(--font-card-title); }
+.modal h2 { font-size: var(--font-modal-title); }
+
+.page-heading p,
+.tool-body > p,
+.control-card > p,
+.empty-slot p,
+.modal-intro,
+.setting-row p { font-size: var(--font-description); }
+
+.toast { font-size: var(--font-description); }
+.toast > span { font-size: inherit; }
+.control-status,
+.art-status { font-size: var(--font-status); }
+
+.nav-count,
+.tool-tags > span { font-size: var(--font-caption); }
+.modal-footnote { font-size: var(--font-footnote); }
+.sidebar-version { font-size: var(--font-version); }
+.setting-row strong { font-size: var(--font-setting-title); }
+.ui-test-panel { font-size: var(--font-field-label); }
+.slot-icon { font-size: 19.2px; }
+
+@media (max-width: 1000px) {
+  :root { --font-brand: 13px; }
+}
+@media (max-width: 760px) {
+  :root { --font-brand: 10px; --font-page-title: 18px; }
+}
