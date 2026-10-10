@@ -6,12 +6,13 @@ type IconProps = { size?: number; className?: string };
 type IconName =
   | "check" | "arrowLeft" | "alert" | "power" | "chevronDown" | "chevronRight"
   | "folder" | "grid" | "activity" | "preview" | "restart" | "settings"
-  | "wifi" | "wifiOff" | "close" | "play";
+  | "wifi" | "wifiOff" | "close" | "play" | "plus";
 
 // Selected from Pixelarticons 2.4.1 (MIT, Gerrit Halfmann). Wi-Fi off is a
 // paired RBX variant of that set's Wi-Fi glyph; its stepped slash stays legible
 // at the small status-icon size.
 const glyphs: Record<IconName, ReactNode> = {
+  plus: <path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" />,
   play: <path d="M3 1h2v14H3z M5 2h1v1H5z M5 3h2v1H5z M6 4h2v1H6z M7 5h2v1H7z M8 6h2v1H8z M9 7h2v2H9z M8 9h2v1H8z M7 10h2v1H7z M6 11h2v1H6z M5 12h2v1H5z M5 13h1v1H5z" />,
   check: <path d="M10 18H8v-2h2v2Zm-2-2H6v-2h2v2Zm4-2v2h-2v-2h2Zm-6 0H4v-2h2v2Zm8 0h-2v-2h2v2Zm2-2h-2v-2h2v2Zm2-2h-2V8h2v2Zm2-2h-2V6h2v2Z" />,
   restart: <path d="M13 20H9V18H13V20ZM19 16H21V18H19V20H17V18H15V16H17V8H19V16ZM9 18H7V16H9V18ZM7 6H9V8H7V16H5V8H3V6H5V4H7V6ZM15 16H13V14H15V16ZM23 16H21V14H23V16ZM3 10H1V8H3V10ZM11 10H9V8H11V10ZM17 8H15V6H17V8ZM15 6H11V4H15V6Z" />,
@@ -56,6 +57,7 @@ export function LoaderCircle({ size = 16, className }: IconProps) {
 export const Radio = makeIcon("activity");
 export const Preview = makeIcon("preview");
 export const Play = makeIcon("play");
+export const Plus = makeIcon("plus");
 export const RotateCw = makeIcon("restart");
 export const Settings2 = makeIcon("settings");
 export const Wifi = makeIcon("wifi");

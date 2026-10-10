@@ -54,6 +54,36 @@
 .tool-page-heading h1,
 .modal-heading h2 { transform: none; }
 
+/* Center the visible pixel letters beside artwork, not just their line boxes.
+   Whole-pixel offsets preserve the font's crisp edges. */
+.nav-item > .ui-label,
+.art-status > .ui-label,
+.control-status > .ui-label,
+.tool-tags .ui-label,
+.text-button > .ui-label,
+.toast > .ui-label,
+.brand strong,
+.ui-test-heading > .ui-label { transform: translateY(1px); }
+.modal-heading h2 { transform: translateY(1px); }
+.tool-page-heading h1 { transform: translateY(2px); }
+
+:is(.nav-item, .art-status, .control-status, .tool-tags > span, .text-button, .toast, .ui-test-heading, .modal-heading) > .pixel-icon,
+.status-icon > .pixel-icon { display: block; flex-shrink: 0; }
+
+/* The tabular numeral 1 has a narrow outline and extra trailing advance.
+   Compensate its side bearing independently of the navigation label. */
+.nav-count { letter-spacing: 0; }
+.app-shell[data-type-size="large"] .nav-count { width: 22px; flex-basis: 22px; }
+.nav-count > .ui-label { text-indent: 1px; transform: translateY(1px); }
+.app-shell[data-type-size="large"] .nav-count > .ui-label { text-indent: 3px; }
+@supports (text-box-trim: trim-both) {
+  .nav-count > .ui-label {
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
+    transform: none;
+  }
+}
+
 /* Avoid quarter-pixel text origins when two fractional-width cards center
    odd-width labels. Keep ordinary sizing as a fallback for older WebViews. */
 @supports (width: calc-size(max-content, round(up, size, 2px))) {

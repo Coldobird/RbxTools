@@ -6,6 +6,8 @@ src-tauri/gen/
 *.tsbuildinfo
 .DS_Store
 artifacts/test-results/
+test-results/
+playwright-report/
 src-tauri/icons/
 release/
 checks/*.exe

@@ -1,0 +1,52 @@
+name: UI alignment tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  browser-ui:
+    name: Browser visual alignment
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium
+        if: runner.os == 'Windows'
+        run: npx playwright install chromium
+
+      - name: Run browser UI alignment tests
+        run: npm run test:ui
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-alignment-${{ runner.os }}-${{ github.run_number }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

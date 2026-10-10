@@ -7,6 +7,7 @@ import {
   Grid2X2,
   LoaderCircle,
   Play,
+  Plus,
   Preview,
   RotateCw,
   Settings2,
@@ -517,7 +518,7 @@ export default function App() {
                 </button>
 
                 <div className="empty-slot" aria-hidden="true">
-                  <div className="slot-icon"><span>+</span></div>
+                  <div className="slot-icon"><Plus size={24} /></div>
                   <h2>Room for more.</h2>
                   <p>The next useful little tool belongs here.</p>
                 </div>

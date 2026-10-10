@@ -50,3 +50,7 @@ Find Steam, manage Spacewar privacy, and check for updates.
 ## Stay up to date
 
 The app checks for updates automatically. Click **Update** when prompted, or check in **Settings**.
+
+## UI alignment checks
+
+Run `npm run test:ui` to verify visible icon and text alignment in Chromium. On a new checkout, install the browser first with `npx playwright install chromium`. The tests use the app's simulated UI test view and compare rendered ink pixels across desktop and compact widths.

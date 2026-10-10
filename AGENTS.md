@@ -1,6 +1,7 @@
 # Release policy
 
 - The user's word “commit” always includes committing and pushing to `origin/main`; bump the application patch version unless they specify another version.
+- Every commit request must run `npm run test:ui` before committing. Fix any failures and rerun until it passes; do not weaken the alignment assertions or tolerance.
 - Every new application version must automatically create a GitHub Release when its first `main` build completes.
 - The release tag is `v` followed by the version in `src-tauri/tauri.conf.json`.
 - Ordinary commits that do not change to an unreleased version still build and upload an Actions artifact, but do not create another release.
@@ -22,6 +23,12 @@
 - Activate or exit the installed app's UI test view with **Ctrl+Shift+T**. In a browser preview, append **`?ui-test=1`** to the app URL (for example `http://127.0.0.1:1420/?ui-test=1`).
 - Use this view for future UI checks. Its controls preview both pages, all Steam states, success/error/update toasts and stacks, Settings/startup-update/force-restart modals, busy states, and update errors. Hide controls for unobstructed screenshots.
 - The view uses the actual app components with simulated actions; Steam, network, privacy, file dialogs, and installation commands are disabled. Toasts remain visible for inspection. Exit returns to normal operation; reopening a URL with `?ui-test=1` reactivates test mode.
+
+# UI alignment checks
+
+- After changing typography, icons, badges, or layout CSS, run `npm run test:ui` in addition to the relevant frontend checks.
+- These browser checks measure the visible pixels of icons and text in the UI test view. Centering an element's CSS box alone is insufficient.
+- Keep the alignment tolerance at one CSS pixel. Fix the UI when a check fails; do not widen the tolerance to accept a regression.
 
 # Long-running test monitoring
 

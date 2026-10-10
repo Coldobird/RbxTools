@@ -1,0 +1,11 @@
+/* Optical corrections validated by tests/ui/alignment.pw.ts.
+   Keep changes in whole pixels to preserve the cartridge artwork. */
+.slot-icon > .pixel-icon { display: block; }
+
+/* The classic numeral has three trailing advance pixels. Center its ink,
+   compensating both its side bearing and the added indent's own width. */
+.app-shell[data-type-size="classic"] .nav-count > .ui-label { text-indent: 3px; }
+
+/* "Network paused" includes a descender. It needs no additional downward
+   label offset to align with the centered Wi-Fi-off artwork. */
+.control-status > .status-icon.blocked + .ui-label { transform: none; }

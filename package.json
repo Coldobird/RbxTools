@@ -1,7 +1,7 @@
 {
   "name": "rbx-tools",
   "private": true,
-  "version": "0.2.24",
+  "version": "0.2.25",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -13,7 +13,8 @@
     "desktop:build": "npm run icons && tauri build",
     "desktop:build:portable": "npm run icons && tauri build --no-bundle",
     "postdesktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/copy-builds-to-onedrive.ps1",
-    "test": "vitest run && node --test scripts/check-build-cache.mjs"
+    "test": "vitest run && node --test scripts/check-build-cache.mjs",
+    "test:ui": "playwright test"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.0",
@@ -24,11 +25,13 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/vite": "^4.1.0",
     "@tauri-apps/cli": "^2.8.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "pngjs": "^7.0.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
