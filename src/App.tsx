@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Check,
   ArrowLeft,
@@ -36,6 +36,18 @@ import {
 
 type Page = "library" | "steamy";
 const appVersion = tauriConfig.version;
+const selectionPresets = [
+  { name: "Peach", background: "#ffd0bc", color: "#29151c" },
+  { name: "Cream", background: "#fff4db", color: "#29151c" },
+  { name: "Gold", background: "#ffd05a", color: "#29151c" },
+  { name: "Coral", background: "#ff9a8a", color: "#29151c" },
+  { name: "Rose", background: "#d97b82", color: "#190e15" },
+  { name: "Dusty pink", background: "#b8636d", color: "#fff4db" },
+  { name: "Red", background: "#c14f5c", color: "#fff4db" },
+  { name: "Burgundy", background: "#743039", color: "#fff4db" },
+  { name: "Plum", background: "#512733", color: "#ffd0bc" },
+  { name: "Ink", background: "#29151c", color: "#ffd05a" },
+];
 
 const initialStatus: Status = {
   steamPath: null,
@@ -61,6 +73,8 @@ export default function App() {
   const [testView, setTestView] = useState(isUiTestActive);
   const [testPanelOpen, setTestPanelOpen] = useState(true);
   const [testTypeSize, setTestTypeSize] = useState("large");
+  const [testSelectionPreset, setTestSelectionPreset] = useState("Peach");
+  const selectionPreset = selectionPresets.find(preset => preset.name === testSelectionPreset)!;
   const [testSteamState, setTestSteamState] = useState<TestSteamState>("online");
   const liveDesktop = desktop && !testView;
   const [page, setPage] = useState<Page>("library");
@@ -393,7 +407,14 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell" data-type-size={testView ? testTypeSize : "large"}>
+    <div className="app-shell" data-type-size={testView ? testTypeSize : "large"} style={testView ? {
+      "--selection-background": selectionPreset.background,
+      "--selection-color": selectionPreset.color,
+    } as CSSProperties : undefined} onDragStartCapture={(event) => {
+      if (event.target instanceof Element && event.target.closest('button, a[href], select, option, label, [role="button"]')) {
+        event.preventDefault();
+      }
+    }}>
       {testView && (
         <aside className={`ui-test-panel ${testPanelOpen ? "" : "collapsed"}`} aria-label="UI test controls">
           <div className="ui-test-heading">
@@ -405,6 +426,8 @@ export default function App() {
             <>
               <p>Simulated actions only. Ctrl+Shift+T exits.</p>
               <label><span className="ui-label">Text sizes</span><select aria-label="Text sizes" value={testTypeSize} onChange={(event) => setTestTypeSize(event.target.value)}><option value="classic">8 / 16 / 24 px</option><option value="large">10 / 18 / 26 px</option></select></label>
+              <label><span className="ui-label">Selection</span><select aria-label="Selection background" value={testSelectionPreset} onChange={(event) => setTestSelectionPreset(event.target.value)}>{selectionPresets.map(preset => <option key={preset.name} value={preset.name}>{preset.name}</option>)}</select></label>
+              <p className="selection-preview">Drag over this text to preview selection.</p>
               <label><span className="ui-label">Page</span><select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
               <label><span className="ui-label">Steam state</span><select aria-label="Steam state" value={testSteamState} onChange={(event) => {
                 const state = event.target.value as TestSteamState;

@@ -16,6 +16,7 @@
 .ui-test-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ui-test-heading strong { flex: 1; }
 .ui-test-panel p { margin: 10px 0; color: #e2b6aa; }
+.ui-test-panel .selection-preview { filter: url(#pixel-type); }
 .ui-test-panel label { display: grid; grid-template-columns: 85px minmax(0, 1fr); align-items: center; gap: 8px; margin: 9px 0; }
 /* Native select text cannot use a label span; mirror its optical offset in padding. */
 .ui-test-panel select { width: 100%; min-width: 0; padding: 7px 6px 5px; border: 2px solid #d97b82; border-radius: 0; background: #352128; color: #ffe1cc; font: inherit; }

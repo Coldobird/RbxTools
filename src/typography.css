@@ -47,6 +47,23 @@
 .sidebar-version > span,
 .tool-tags > span { filter: url(#pixel-type); }
 
+/* Display text keeps the arrow cursor while remaining selectable. Interactive
+   controls retain their own cursor styles. */
+.app-shell { cursor: default; }
+
+/* Controls act as a single click target; their labels and artwork should not
+   become selected during clicks or drags. Editable text remains selectable. */
+.app-shell :is(button, a[href], select, option, label, [role="button"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Peach is the shared selection palette; test view can preview alternatives. */
+.app-shell ::selection {
+  background-color: var(--selection-background, #ffd0bc);
+  color: var(--selection-color, #29151c);
+}
+
 /* The outlines use an 8-pixel em. Multiples of eight give each design
    pixel a whole screen pixel at 100% zoom; integer baselines avoid blur. */
 .brand strong,
@@ -72,7 +89,7 @@
 
 /* The tabular numeral 1 has a narrow outline and extra trailing advance.
    Compensate its side bearing independently of the navigation label. */
-.nav-count { letter-spacing: 0; }
+.nav-count { letter-spacing: var(--tracking-control); }
 .app-shell[data-type-size="large"] .nav-count { width: 22px; flex-basis: 22px; }
 .nav-count > .ui-label { text-indent: 1px; transform: translateY(1px); }
 .app-shell[data-type-size="large"] .nav-count > .ui-label { text-indent: 3px; }
@@ -163,7 +180,7 @@
 
 .sidebar-version { letter-spacing: 0; }
 .sidebar .nav-item,
-.sidebar .text-button { letter-spacing: 0; }
+.sidebar .text-button { letter-spacing: var(--tracking-control); }
 
 .brand strong { font-size: var(--font-brand); }
 .page-heading h1 { font-size: var(--font-page-title); }
@@ -204,6 +221,8 @@
    The UI uses this scale by default; test view can preview 8/16/24px. */
 .app-shell[data-type-size="large"] {
   --pixel: "RBX Cartridge 10", "Press Start 2P", monospace;
+  /* Shared tracking for every role using the native 10px face. */
+  --tracking-control: 1px;
   --font-body: 10px;
   --font-navigation: 10px;
   --font-action: 10px;
@@ -236,6 +255,6 @@
   :root { --font-brand: 8px; --font-page-title: 16px; }
   .brand strong { font-weight: 400; }
   .app-shell[data-type-size="large"] { --font-brand: 10px; --font-page-title: 18px; }
-  .app-shell[data-type-size="large"] .brand strong { font-family: var(--pixel); line-height: 20px; }
+  .app-shell[data-type-size="large"] .brand strong { font-family: var(--pixel); line-height: 20px; letter-spacing: var(--tracking-control); }
   .app-shell[data-type-size="large"] .page-heading h1 { font-family: "RBX Cartridge 18", "Press Start 2P", monospace; line-height: 28px; }
 }
