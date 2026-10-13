@@ -234,10 +234,7 @@ fn update_blocked(
         state.network_revision.fetch_add(1, Ordering::SeqCst);
     } else if !blocked {
         // Keep ownership if an explicit close fails so the UI never falsely says restored.
-        if let Some(block) = network.as_mut() {
-            block.close()?;
-        }
-        *network = None;
+        steam_controls::restore_network(&mut network)?;
         let blocked_for = state
             .blocked_at
             .lock()
@@ -325,19 +322,10 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
         }
         let _reset = Reset(&state.restarting);
         let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
-        // A restart must not relaunch Steam behind our own network block.
-        let mut network = state
-            .network
-            .lock()
-            .map_err(|_| "Network state unavailable")?;
-        *state
-            .blocked_at
-            .lock()
-            .map_err(|_| "Network timing unavailable")? = None;
+        // Cancel any reconnect assist without releasing the app-owned block.
+        // Its filters apply to the executable path, including the new process.
         state.network_revision.fetch_add(1, Ordering::SeqCst);
-        steam_controls::restore_network(&mut network)?;
-        drop(network);
-        steam::restart(Path::new(&path), force)
+        steam_controls::restart(Path::new(&path), force)
     })
     .await
     .map_err(|e| format!("Restart failed: {e}"))?

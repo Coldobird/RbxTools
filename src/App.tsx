@@ -284,8 +284,8 @@ export default function App() {
     void action("restart", async () => {
       if (!liveDesktop) {
         await previewDelay();
-        setStatus((current) => ({ ...current, steamRunning: true, steamOnline: true, blocked: false }));
-        setTestSteamState("online");
+        setStatus((current) => ({ ...current, steamRunning: true, steamOnline: !current.blocked }));
+        setTestSteamState(status.blocked ? "blocked" : "online");
         showNotice("Steam restarted (preview only). No process was changed.");
         setRestartPhase("running");
         if (!testView) restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
@@ -716,7 +716,7 @@ export default function App() {
                   <h2 id="modal-title">Force restart Steam?</h2>
                 </div>
                 <p className="modal-intro">
-                  Force-close Steam and restart it with network access restored? This can interrupt downloads and cloud sync.
+                  Force-close Steam and restart it? {status.blocked ? "The network will stay paused. " : ""}This can interrupt downloads and cloud sync.
                 </p>
                 <div className="modal-actions">
                   <button className="secondary-button" onClick={() => setModal(null)}><span className="ui-label">Cancel</span></button>

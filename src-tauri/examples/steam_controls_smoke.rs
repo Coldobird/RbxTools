@@ -201,7 +201,7 @@ fn run(
     let message = if reconnect {
         "Keeping the existing Steam session".to_string()
     } else {
-        steam_controls::restart(&path, force, &mut None)?
+        steam_controls::restart(&path, force)?
     };
     let after = steam::matching_processes(&path)?;
     if after.len() != 1 || (!reconnect && after == before) || (reconnect && after != before) {
@@ -344,13 +344,18 @@ fn run(
     if force {
         drop(probe);
         block = Some(network::NetworkBlock::start(&path)?);
-        let message = steam_controls::restart(&path, true, &mut block)?;
+        let message = steam_controls::restart(&path, true)?;
         let final_pids = steam::matching_processes(&path)?;
         let filters = owned_filters()?;
-        if block.is_some() || filters != 0 || final_pids.is_empty() || final_pids == after {
+        if block.is_none() || filters == 0 || final_pids.is_empty() || final_pids == after {
             return Err(
-                "Force restart while blocked did not clear filters and replace Steam.".into(),
+                "Force restart while blocked did not preserve filters and replace Steam.".into(),
             );
+        }
+        recorder.record("blocked_force_restart_paused", json!({"message":message,"beforePids":after,"afterPids":final_pids,"ownedFilters":filters}))?;
+        steam_controls::restore_network(&mut block)?;
+        if owned_filters()? != 0 {
+            return Err("Owned WFP filters remained after explicit restore.".into());
         }
         let deadline = Instant::now() + Duration::from_secs(90);
         while steam_connection::observed_online(Some(&path), true, false) != Some(true) {
@@ -359,7 +364,7 @@ fn run(
             }
             thread::sleep(Duration::from_secs(1));
         }
-        recorder.record("blocked_force_restart_pass", json!({"message":message,"beforePids":after,"afterPids":final_pids,"ownedFilters":filters,"productionOnline":true}))?;
+        recorder.record("blocked_force_restart_pass", json!({"message":message,"beforePids":after,"afterPids":final_pids,"ownedFilters":owned_filters()?,"productionOnline":true}))?;
     }
     recorder.record(
         "complete",
