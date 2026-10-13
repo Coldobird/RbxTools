@@ -168,7 +168,7 @@ async fn set_path(kind: String, path: String, app: tauri::AppHandle) -> Result<S
 
 fn update_path(kind: &str, path: &Path, state: &AppState) -> Result<Status, String> {
     if state.privacy_changing.load(Ordering::SeqCst) {
-        return Err("Finish or close Steam's privacy sign-in window first.".into());
+        return Err("Wait for the Spacewar privacy check to finish.".into());
     }
     if kind != "steam" && kind != "target" {
         return Err("Unknown setting".into());
@@ -210,7 +210,7 @@ fn update_blocked(
     app: tauri::AppHandle,
 ) -> Result<Status, String> {
     if state.privacy_changing.load(Ordering::SeqCst) {
-        return Err("Finish or close Steam's privacy sign-in window first.".into());
+        return Err("Wait for the Spacewar privacy check to finish.".into());
     }
     let mut network = state
         .network
@@ -309,7 +309,7 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         if state.privacy_changing.load(Ordering::SeqCst) {
-            return Err("Finish or close Steam's privacy sign-in window first.".into());
+            return Err("Wait for the Spacewar privacy check to finish.".into());
         }
         if state.restarting.swap(true, Ordering::SeqCst) {
             return Err("Steam is already restarting.".into());
@@ -331,8 +331,35 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
     .map_err(|e| format!("Restart failed: {e}"))?
 }
 
-#[tauri::command]
-async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> {
+fn spacewar_preflight(state: &AppState) -> Result<(PathBuf, String), String> {
+    if state.restarting.load(Ordering::SeqCst) {
+        return Err("Wait for Steam to finish restarting.".into());
+    }
+    if state.reconnect_assisting.load(Ordering::SeqCst) {
+        return Err("Wait for Steam's reconnect check to finish.".into());
+    }
+    if state.updating.load(Ordering::SeqCst) {
+        return Err("Wait for the update to finish.".into());
+    }
+    let network = state
+        .network
+        .lock()
+        .map_err(|_| "Network state unavailable")?;
+    if network.is_some() {
+        return Err("Restore Steam's network access before checking game privacy.".into());
+    }
+    drop(network);
+    let (path, running) = inspect_steam(state)?;
+    if !running {
+        return Err("Open Steam and sign in before checking Spacewar privacy.".into());
+    }
+    let steam_id = steam::active_steam_id()
+        .ok_or_else(|| "Sign in to Steam before checking Spacewar privacy.".to_string())?;
+    let path = path.ok_or("Locate steam.exe first.")?;
+    Ok((PathBuf::from(path), steam_id))
+}
+
+async fn spacewar_privacy(private: Option<bool>, app: tauri::AppHandle) -> Result<bool, String> {
     let state = app.state::<AppState>();
     if state.privacy_changing.swap(true, Ordering::SeqCst) {
         return Err("Spacewar privacy is already being checked.".into());
@@ -345,30 +372,26 @@ async fn make_spacewar_private(app: tauri::AppHandle) -> Result<String, String> 
     }
     let _reset = Reset(&state.privacy_changing);
     let blocking_app = app.clone();
-    let steam_id = run_blocking(move || -> Result<String, String> {
+    run_blocking(move || {
         let state = blocking_app.state::<AppState>();
-        if state.restarting.load(Ordering::SeqCst) {
-            return Err("Wait for Steam to finish restarting.".into());
+        let (path, steam_id) = spacewar_preflight(&state)?;
+        let actual = spacewar_privacy::run(&path, private)?;
+        if steam::active_steam_id().as_deref() != Some(steam_id.as_str()) {
+            return Err("The account open in Steam changed. Check Spacewar privacy again.".into());
         }
-        if state.reconnect_assisting.load(Ordering::SeqCst) {
-            return Err("Wait for Steam's reconnect check to finish.".into());
-        }
-        let network = state
-            .network
-            .lock()
-            .map_err(|_| "Network state unavailable")?;
-        if network.is_some() {
-            return Err("Restore Steam's network access before changing game privacy.".into());
-        }
-        let (_, running) = inspect_steam(&state)?;
-        if !running {
-            return Err("Open Steam and sign in before making Spacewar private.".into());
-        }
-        steam::active_steam_id()
-            .ok_or_else(|| "Sign in to Steam before making Spacewar private.".into())
+        Ok(actual)
     })
-    .await?;
-    spacewar_privacy::make_private(app.clone(), steam_id).await
+    .await
+}
+
+#[tauri::command]
+async fn get_spacewar_privacy(app: tauri::AppHandle) -> Result<bool, String> {
+    spacewar_privacy(None, app).await
+}
+
+#[tauri::command]
+async fn set_spacewar_privacy(private: bool, app: tauri::AppHandle) -> Result<bool, String> {
+    spacewar_privacy(Some(private), app).await
 }
 
 pub fn run_update_helper() -> Option<i32> {
@@ -381,6 +404,10 @@ pub fn run_reconnect_helper() -> Option<i32> {
 
 pub fn run_status_helper() -> Option<i32> {
     steam_connection::run_helper_from_args()
+}
+
+pub fn run_spacewar_privacy_helper() -> Option<i32> {
+    spacewar_privacy::run_helper_from_args()
 }
 
 pub fn run() {
@@ -430,7 +457,8 @@ pub fn run() {
             set_path,
             set_blocked,
             restart_steam,
-            make_spacewar_private
+            get_spacewar_privacy,
+            set_spacewar_privacy
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");

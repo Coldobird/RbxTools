@@ -105,11 +105,18 @@ export async function setBlocked(blocked: boolean): Promise<Status> {
   return invoke("set_blocked", { blocked });
 }
 
-export async function makeSpacewarPrivate(): Promise<string> {
+export async function getSpacewarPrivacy(): Promise<boolean> {
   requireLiveUi();
   if (!desktop)
     throw new Error("Spacewar privacy is available in the installed desktop app.");
-  return invoke("make_spacewar_private");
+  return invoke("get_spacewar_privacy");
+}
+
+export async function setSpacewarPrivacy(privateGame: boolean): Promise<boolean> {
+  requireLiveUi();
+  if (!desktop)
+    throw new Error("Spacewar privacy is available in the installed desktop app.");
+  return invoke("set_spacewar_privacy", { private: privateGame });
 }
 
 export async function getUpdate(): Promise<UpdateCheck> {

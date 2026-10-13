@@ -213,7 +213,9 @@
 .tool-tags > span { font-size: var(--font-caption); }
 .modal-footnote { font-family: "RBX Cartridge", "Press Start 2P", monospace; font-size: var(--font-footnote); }
 .sidebar-version { font-family: "RBX Cartridge", "Press Start 2P", monospace; font-size: var(--font-version); line-height: 2; }
-.setting-row strong { font-size: var(--font-setting-title); }
+/* A complete line box keeps filtered text and its selection highlight aligned;
+   an inline strong can leave the highlight on a fractional glyph-sized box. */
+.setting-row strong { display: block; font-size: var(--font-setting-title); }
 .ui-test-panel { font-size: var(--font-field-label); }
 .slot-icon { font-size: 19.2px; }
 

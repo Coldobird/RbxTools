@@ -4,7 +4,7 @@ import { isUiTestRequested, setUiTestActive, testSteamStatus } from "./uiTestVie
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
-import { getStatus, getUpdate, installUpdate, makeSpacewarPrivate, pickExecutable, restartSteam, setBlocked } from "./api";
+import { getStatus, getUpdate, installUpdate, getSpacewarPrivacy, setSpacewarPrivacy, pickExecutable, restartSteam, setBlocked } from "./api";
 
 afterEach(() => { setUiTestActive(false); vi.clearAllMocks(); });
 
@@ -21,7 +21,8 @@ describe("UI test view", () => {
     setUiTestActive(true);
     for (const operation of [
       () => restartSteam(false), () => restartSteam(true), () => setBlocked(true),
-      () => setBlocked(false), () => makeSpacewarPrivate(), () => installUpdate(),
+      () => setBlocked(false), () => getSpacewarPrivacy(), () => setSpacewarPrivacy(true),
+      () => setSpacewarPrivacy(false), () => installUpdate(),
       () => pickExecutable("steam"), () => pickExecutable("target"),
     ]) await expect(operation()).rejects.toThrow("disabled in UI test view");
     await getStatus();

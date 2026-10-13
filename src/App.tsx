@@ -26,7 +26,8 @@ import {
   getUpdate,
   getStatus,
   installUpdate,
-  makeSpacewarPrivate,
+  getSpacewarPrivacy,
+  setSpacewarPrivacy,
   type AvailableUpdate,
   pickExecutable,
   restartSteam,
@@ -76,6 +77,7 @@ export default function App() {
   const [testSelectionPreset, setTestSelectionPreset] = useState("Peach");
   const selectionPreset = selectionPresets.find(preset => preset.name === testSelectionPreset)!;
   const [testSteamState, setTestSteamState] = useState<TestSteamState>("online");
+  const [testPrivacyState, setTestPrivacyState] = useState("public");
   const liveDesktop = desktop && !testView;
   const [page, setPage] = useState<Page>("library");
   const [status, setStatus] = useState(initialStatus);
@@ -87,6 +89,10 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateFeedback, setUpdateFeedback] = useState<string | null>(null);
   const [modal, setModalState] = useState<"settings" | "force" | "update" | null>(null);
+  const [spacewarPrivate, setSpacewarPrivate] = useState<boolean | null>(null);
+  const [privacyChecking, setPrivacyChecking] = useState(false);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+  const [privacyRefresh, setPrivacyRefresh] = useState(0);
   const [startupUpdatePending, setStartupUpdatePending] = useState(false);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
   const restartTimer = useRef<number | null>(null);
@@ -98,6 +104,30 @@ export default function App() {
   useEffect(() => () => {
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (modal !== "settings") return;
+    let active = true;
+    setSpacewarPrivate(null);
+    setPrivacyError(null);
+    setPrivacyChecking(false);
+    if (loading || status.blocked || ((liveDesktop || testView) && !status.steamRunning)) return;
+    if (!liveDesktop) {
+      setSpacewarPrivate(testPrivacyState === "private" ? true : testPrivacyState === "public" ? false : null);
+      setPrivacyChecking(testPrivacyState === "checking");
+      setPrivacyError(testPrivacyState === "error" ? "Could not check Spacewar privacy. Try again." : null);
+      return;
+    }
+    setPrivacyChecking(true);
+    void getSpacewarPrivacy().then(result => {
+      if (active) setSpacewarPrivate(result);
+    }).catch(err => {
+      if (active) setPrivacyError(String(err));
+    }).finally(() => {
+      if (active) setPrivacyChecking(false);
+    });
+    return () => { active = false; };
+  }, [modal, liveDesktop, testView, loading, status.blocked, status.steamRunning, testPrivacyState, privacyRefresh]);
 
   const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "running" && status.steamRunning ? "running" : null;
   const networkIcon: IconState = status.blocked ? "blocked" : loading ? "connecting" : status.steamRunning && status.steamOnline === null ? "unknown" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
@@ -336,13 +366,31 @@ export default function App() {
   }
 
   function openPrivacy() {
+    if (privacyChecking) return;
+    if (spacewarPrivate === null) {
+      if (!liveDesktop) setTestPrivacyState("public");
+      setPrivacyRefresh(value => value + 1);
+      return;
+    }
+    const makePrivate = !spacewarPrivate;
     void action("privacy", async () => {
       if (!liveDesktop) {
         await previewDelay();
-        showNotice("Preview only. The desktop app signs in to Steam and automatically sets and verifies Spacewar privacy. No account was changed.");
+        setSpacewarPrivate(makePrivate);
+        setTestPrivacyState(makePrivate ? "private" : "public");
+        showNotice(`Spacewar is ${makePrivate ? "private" : "public"} (preview only). No account was changed.`);
         return;
       }
-      showNotice(await makeSpacewarPrivate());
+      try {
+        const result = await setSpacewarPrivacy(makePrivate);
+        setSpacewarPrivate(result);
+        setPrivacyError(null);
+        showNotice(`Spacewar is now ${result ? "private" : "public"}. Steam confirmed the setting.`);
+      } catch (err) {
+        setSpacewarPrivate(null);
+        setPrivacyError(String(err));
+        throw err;
+      }
     });
   }
 
@@ -427,6 +475,7 @@ export default function App() {
               <p>Simulated actions only. Ctrl+Shift+T exits.</p>
               <label><span className="ui-label">Text sizes</span><select aria-label="Text sizes" value={testTypeSize} onChange={(event) => setTestTypeSize(event.target.value)}><option value="classic">8 / 16 / 24 px</option><option value="large">10 / 18 / 26 px</option></select></label>
               <label><span className="ui-label">Selection</span><select aria-label="Selection background" value={testSelectionPreset} onChange={(event) => setTestSelectionPreset(event.target.value)}>{selectionPresets.map(preset => <option key={preset.name} value={preset.name}>{preset.name}</option>)}</select></label>
+              <label><span className="ui-label">Privacy</span><select aria-label="Spacewar privacy state" value={testPrivacyState} onChange={(event) => setTestPrivacyState(event.target.value)}><option value="public">Public</option><option value="private">Private</option><option value="checking">Checking</option><option value="error">Check error</option></select></label>
               <p className="selection-preview">Drag over this text to preview selection.</p>
               <label><span className="ui-label">Page</span><select aria-label="Page" value={page} onChange={(event) => setPage(event.target.value as Page)}><option value="library">Tool Library</option><option value="steamy">Steamy Friends</option></select></label>
               <label><span className="ui-label">Steam state</span><select aria-label="Steam state" value={testSteamState} onChange={(event) => {
@@ -581,7 +630,7 @@ export default function App() {
                     disabled={!!busy || loading || !status.steamPath}
                     onClick={() => restart()}
                   >
-                    <span className="ui-label">{busy === "restart" ? "Restarting Steam…" : "Restart Steam"}</span>
+                    <span className="ui-label">{busy === "restart" ? "Restarting Steam…" : status.steamRunning ? "Restart Steam" : "Start Steam"}</span>
                   </button>
                   <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
                     <FolderOpen size={15} />
@@ -681,15 +730,16 @@ export default function App() {
                         ? "Restore Steam’s network access first."
                         : (liveDesktop || testView) && !status.steamRunning
                           ? "Open Steam and sign in first."
-                          : "Automatically hide its status from friends."}
+                          : "We use Spacewar to reconnect to Steam faster. Make it private so friends won’t see you playing it."}
                     </p>
+                    {privacyError && <p role="alert">{privacyError}</p>}
                   </div>
                   <button
                     className="small-button"
-                    disabled={!!busy || loading || status.blocked || ((liveDesktop || testView) && !status.steamRunning)}
+                    disabled={!!busy || loading || privacyChecking || (spacewarPrivate === null && !privacyError) || status.blocked || ((liveDesktop || testView) && !status.steamRunning)}
                     onClick={openPrivacy}
                   >
-                    <span className="ui-label">{busy === "privacy" ? "Waiting for Steam…" : "Make private"}</span>
+                    <span className="ui-label">{busy === "privacy" ? "Saving…" : privacyChecking ? "Checking…" : privacyError ? "Retry check" : spacewarPrivate ? "Make Public" : "Make Private"}</span>
                   </button>
                 </div>
                 <div className="setting-row">

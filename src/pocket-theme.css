@@ -159,7 +159,7 @@ button:disabled { opacity: .62; }
 .slot-icon { border-radius: 0; }
 .slot-icon > span { line-height: 1; transform: translateY(2px); }
 .empty-slot h2, .empty-slot p, .slot-icon { color: #d3a59f; }
-.modal { width: min(520px, 100%); padding: 24px; background: #59303a; }
+.modal { width: min(540px, 100%); padding: 24px; background: #59303a; }
 .modal h2 { font-family: var(--pixel); }
 .modal-heading { display: flex; align-items: center; gap: 12px; padding-right: 28px; min-height: 28px; }
 .modal-heading > svg { flex: 0 0 auto; }
