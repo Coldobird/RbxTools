@@ -306,7 +306,16 @@ mod tests {
         let active = AtomicBool::new(false);
         let result = single_query(
             || {
-                let mut child = command_helper("exit 7");
+                use std::os::windows::process::CommandExt;
+                let mut child = Helper(
+                    Command::new("cmd.exe")
+                        .args(["/d", "/c", "exit 7"])
+                        .creation_flags(0x08000000)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .unwrap(),
+                );
                 wait_for_query(&mut child, Duration::from_secs(5)).map(|_| true)
             },
             &active,
