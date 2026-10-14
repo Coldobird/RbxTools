@@ -217,7 +217,9 @@ impl Client {
             if self.is_logged_on() {
                 return true;
             }
-            thread::sleep(Duration::from_millis(250));
+            thread::sleep(
+                Duration::from_millis(250).min(deadline.saturating_duration_since(Instant::now())),
+            );
         }
         self.is_logged_on()
     }

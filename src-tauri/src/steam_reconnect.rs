@@ -10,6 +10,10 @@ use std::{
 
 const HELPER_FLAG: &str = "--rbx-reconnect-helper";
 
+fn reconnect_wait(base_ms: u64) -> Duration {
+    Duration::from_millis(fastrand::u64((base_ms - 100)..=(base_ms + 100)))
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Recovery {
     pub online: bool,
@@ -30,11 +34,11 @@ fn request(steam_path: &Path) -> Result<Recovery, String> {
     if !result.online {
         client.request_user_stats()?;
         result.stats_requested = true;
-        result.online = client.wait_until_logged_on(Duration::from_secs(4));
+        result.online = client.wait_until_logged_on(reconnect_wait(300));
         if !result.online {
             client.request_lobby_list()?;
             result.lobby_requested = true;
-            result.online = client.wait_until_logged_on(Duration::from_secs(4));
+            result.online = client.wait_until_logged_on(reconnect_wait(4_000));
         }
     }
     drop(client); // Shut down the game session as soon as recovery finishes.
