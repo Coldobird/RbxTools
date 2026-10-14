@@ -9,7 +9,7 @@ pub fn restore_network(network: &mut Option<NetworkBlock>) -> Result<(), String>
     Ok(())
 }
 
-pub fn restart(path: &Path, force: bool) -> Result<String, String> {
+pub fn restart(path: &Path, force: bool, on_loading_ui: impl FnOnce()) -> Result<String, String> {
     // NetworkBlock stays owned by the app until explicit restore or exit.
-    steam::restart(path, force)
+    steam::restart(path, force, on_loading_ui)
 }

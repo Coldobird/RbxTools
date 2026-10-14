@@ -216,9 +216,6 @@ fn update_blocked(
         .network
         .lock()
         .map_err(|_| "Network state unavailable")?;
-    if state.restarting.load(Ordering::SeqCst) {
-        return Err("Wait for Steam to finish restarting.".into());
-    }
     if blocked && network.is_none() {
         let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
         let path = steam::validate_path(Path::new(&path))?;
@@ -258,6 +255,8 @@ fn start_reconnect_assist(app: tauri::AppHandle, steam_path: PathBuf, revision: 
     std::thread::spawn(move || {
         let state = app.state::<AppState>();
         if state.privacy_changing.load(Ordering::SeqCst)
+            || state.restarting.load(Ordering::SeqCst)
+            || state.updating.load(Ordering::SeqCst)
             || state.network_revision.load(Ordering::SeqCst) != revision
             || state
                 .network
@@ -305,7 +304,11 @@ fn start_reconnect_assist(app: tauri::AppHandle, steam_path: PathBuf, revision: 
 }
 
 #[tauri::command]
-async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, String> {
+async fn restart_steam(
+    force: bool,
+    progress: tauri::ipc::Channel<String>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         if state.privacy_changing.load(Ordering::SeqCst) {
@@ -325,7 +328,9 @@ async fn restart_steam(force: bool, app: tauri::AppHandle) -> Result<String, Str
         // Cancel any reconnect assist without releasing the app-owned block.
         // Its filters apply to the executable path, including the new process.
         state.network_revision.fetch_add(1, Ordering::SeqCst);
-        steam_controls::restart(Path::new(&path), force)
+        steam_controls::restart(Path::new(&path), force, || {
+            let _ = progress.send("loading-ui".into());
+        })
     })
     .await
     .map_err(|e| format!("Restart failed: {e}"))?

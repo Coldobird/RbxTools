@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Status } from "./api";
-import { sameStatus, startStatusPolling } from "./statusPolling";
+import { mergeStatus, mergeRestartResult, mergeNetworkResult, sameStatus, startStatusPolling } from "./statusPolling";
 
 const status: Status = {
   steamPath: "C:\\Steam\\steam.exe",
@@ -86,8 +86,61 @@ describe("status polling", () => {
     for (const change of [
       { steamPath: null }, { targetPath: null }, { steamRunning: false },
       { steamOnline: false }, { steamOnline: null },
+      { connectionStale: true },
       { reconnectError: "Steam reconnect timed out" },
       { blocked: true }, { elevated: false },
     ]) expect(sameStatus(status, { ...status, ...change })).toBe(false);
+  });
+});
+
+describe("last confirmed connection", () => {
+  it.each([true, false])("retains confirmed %s across unavailable checks, then accepts a real response", (online) => {
+    const confirmed = { ...status, steamOnline: online };
+    const unavailable = { ...status, steamOnline: null, reconnectError: "temporary failure" };
+    const retained = mergeStatus(confirmed, unavailable);
+    expect(retained).toMatchObject({ steamOnline: online, connectionStale: true, reconnectError: "temporary failure" });
+    expect(mergeStatus(retained, unavailable)).toBe(retained);
+    expect(mergeStatus(retained, { ...status, steamOnline: !online })).toMatchObject({ steamOnline: !online, connectionStale: false });
+  });
+
+  it("does not invent a connection before the first successful check", () => {
+    expect(mergeStatus({ ...status, steamOnline: null }, { ...status, steamOnline: null }))
+      .toMatchObject({ steamOnline: null });
+  });
+
+  it.each([
+    { steamPath: "C:\\Other\\steam.exe" },
+    { steamPath: null },
+    { steamRunning: false },
+    { blocked: true },
+  ])("invalidates the assumption when the Steam context changes: %j", (change) => {
+    expect(mergeStatus(status, { ...status, steamOnline: null, ...change }))
+      .toMatchObject({ steamOnline: null, connectionStale: false });
+  });
+
+  it("does not reuse connection from a stopped, blocked, or restarted session", () => {
+    for (const change of [{ steamRunning: false }, { blocked: true }, { steamOnline: null }]) {
+      expect(mergeStatus({ ...status, ...change }, { ...status, steamOnline: null }))
+        .toMatchObject({ steamOnline: null });
+    }
+  });
+});
+
+describe("concurrent action results", () => {
+  it("restart cannot undo a newer network pause or restore", () => {
+    expect(mergeRestartResult({ ...status, blocked: true }, status))
+      .toMatchObject({ steamRunning: true, blocked: true, steamOnline: false });
+    expect(mergeRestartResult(status, { ...status, blocked: true, steamOnline: false }))
+      .toMatchObject({ steamRunning: true, blocked: false, steamOnline: null });
+  });
+
+  it("network results cannot undo startup or apply a connection response from an older session", () => {
+    const oldSession = { ...status, steamRunning: false, steamOnline: false };
+    expect(mergeNetworkResult(status, oldSession, true))
+      .toMatchObject({ steamRunning: true, blocked: false, steamOnline: null });
+    expect(mergeNetworkResult(status, { ...status, blocked: true }, true))
+      .toMatchObject({ steamRunning: true, blocked: true, steamOnline: false });
+    expect(mergeNetworkResult(status, { ...status, steamOnline: false }, false))
+      .toMatchObject({ steamRunning: true, steamOnline: false });
   });
 });

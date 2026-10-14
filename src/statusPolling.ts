@@ -49,8 +49,36 @@ export function sameStatus(left: Status, right: Status): boolean {
   return left.steamPath === right.steamPath
     && left.steamRunning === right.steamRunning
     && left.steamOnline === right.steamOnline
+    && !!left.connectionStale === !!right.connectionStale
     && left.reconnectError === right.reconnectError
     && left.targetPath === right.targetPath
     && left.blocked === right.blocked
     && left.elevated === right.elevated;
+}
+
+export function mergeStatus(previous: Status, next: Status): Status {
+  const keepConnection = next.steamOnline === null
+    && previous.steamOnline !== null
+    && next.steamPath !== null
+    && next.steamPath === previous.steamPath
+    && previous.steamRunning && next.steamRunning
+    && !previous.blocked && !next.blocked;
+  const merged = {
+    ...next,
+    steamOnline: keepConnection ? previous.steamOnline : next.steamOnline,
+    connectionStale: keepConnection,
+  };
+  return sameStatus(previous, merged) ? previous : merged;
+}
+
+// Each action owns its fields, so an older full snapshot cannot undo its peer.
+export function mergeRestartResult(current: Status, result: Status): Status {
+  return { ...result, blocked: current.blocked, reconnectError: current.reconnectError,
+    steamOnline: current.blocked ? false : result.blocked ? null : result.steamOnline };
+}
+
+export function mergeNetworkResult(current: Status, result: Status, restartChanged: boolean): Status {
+  return { ...current, blocked: result.blocked, reconnectError: result.reconnectError,
+    steamOnline: result.blocked ? false : restartChanged || result.steamRunning !== current.steamRunning ? null : result.steamOnline,
+    connectionStale: false };
 }

@@ -13,7 +13,7 @@ export function requireLiveUi(): void {
 }
 
 export const testUpdateVersion = "99.0.0";
-export const testSteamStates = ["online", "offline", "connecting", "blocked", "stopped", "missing"] as const;
+export const testSteamStates = ["online", "offline", "online-last-confirmed", "offline-last-confirmed", "connecting", "blocked", "stopped", "missing"] as const;
 export type TestSteamState = typeof testSteamStates[number];
 
 export function testSteamStatus(state: TestSteamState): Status {
@@ -22,7 +22,8 @@ export function testSteamStatus(state: TestSteamState): Status {
     steamPath: path,
     targetPath: path,
     steamRunning: state !== "stopped" && state !== "missing",
-    steamOnline: state === "connecting" ? null : state === "online",
+    steamOnline: state === "connecting" ? null : state === "online" || state === "online-last-confirmed",
+    connectionStale: state === "online-last-confirmed" || state === "offline-last-confirmed",
     blocked: state === "blocked",
     elevated: true,
   };

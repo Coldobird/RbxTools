@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{CloseHandle, HANDLE, HWND, INVALID_HANDLE_VALUE, LPARAM},
     Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     System::{
         Diagnostics::ToolHelp::{
@@ -22,6 +22,10 @@ use windows_sys::Win32::{
             TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
             PROCESS_TERMINATE,
         },
+    },
+    UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+        SendMessageTimeoutW, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_NULL,
     },
 };
 
@@ -338,7 +342,97 @@ pub fn active_steam_id() -> Option<String> {
         .then(|| (76561197960265728u64 + u64::from(account_id)).to_string())
 }
 
-pub fn restart(path: &Path, force: bool) -> Result<String, String> {
+fn is_main_ui_window(title: &str, class: &str) -> bool {
+    // Ignore separately titled updater, sign-in, Friends, and hidden windows.
+    title == "Steam" && class == "vguiPopupWindow"
+}
+
+fn main_windows(processes: &[u32], require_response: bool) -> Vec<HWND> {
+    struct Search<'a> {
+        processes: &'a [u32],
+        require_response: bool,
+        found: Vec<HWND>,
+    }
+    unsafe extern "system" fn visit(window: HWND, data: LPARAM) -> i32 {
+        let search = &mut *(data as *mut Search<'_>);
+        let mut pid = 0;
+        GetWindowThreadProcessId(window, &mut pid);
+        if !search.processes.contains(&pid) || IsWindowVisible(window) == 0 {
+            return 1;
+        }
+        let mut title = [0u16; 256];
+        let mut class = [0u16; 256];
+        let title_len = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32);
+        let class_len = GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
+        if !is_main_ui_window(
+            &String::from_utf16_lossy(&title[..title_len.max(0) as usize]),
+            &String::from_utf16_lossy(&class[..class_len.max(0) as usize]),
+        ) {
+            return 1;
+        }
+        let mut result = 0;
+        if !search.require_response
+            || SendMessageTimeoutW(
+                window,
+                WM_NULL,
+                0,
+                0,
+                SMTO_ABORTIFHUNG | SMTO_BLOCK,
+                250,
+                &mut result,
+            ) != 0
+        {
+            search.found.push(window);
+        }
+        1
+    }
+    let mut search = Search {
+        processes,
+        require_response,
+        found: Vec::new(),
+    };
+    unsafe {
+        EnumWindows(Some(visit), (&mut search as *mut Search<'_>) as LPARAM);
+    }
+    search.found
+}
+
+fn wait_for_ui(path: &Path, previous_windows: &[HWND]) -> Result<(), String> {
+    // A responsive main frame is a readiness heuristic for the native shell;
+    // Steam provides no public contract for all embedded Library content loading.
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let mut ready_window = None;
+    let mut ready_since = Instant::now();
+    let mut missing_since = None;
+    while Instant::now() < deadline {
+        if matching_processes(path)?.is_empty() {
+            ready_window = None;
+            // Bootstrap/update handoffs may briefly replace steam.exe.
+            if missing_since.get_or_insert_with(Instant::now).elapsed() >= Duration::from_secs(5) {
+                return Err("Steam closed before its UI finished loading. Try again.".into());
+            }
+            thread::sleep(Duration::from_millis(300));
+            continue;
+        }
+        missing_since = None;
+        let processes = client_processes(path)?;
+        let window = main_windows(&processes, true)
+            .into_iter()
+            .find(|window| !previous_windows.contains(window));
+        if window.is_some() && window == ready_window {
+            if ready_since.elapsed() >= Duration::from_secs(2) {
+                return Ok(());
+            }
+        } else {
+            ready_window = window;
+            ready_since = Instant::now();
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+    Err("Steam started, but its main UI did not become ready within 90 seconds. Check Steam for an update or sign-in prompt.".into())
+}
+
+pub fn restart(path: &Path, force: bool, on_loading_ui: impl FnOnce()) -> Result<String, String> {
     let path = validate_path(path)?;
     let was_running = !matching_processes(&path)?.is_empty();
     if was_running || (force && !client_processes(&path)?.is_empty()) {
@@ -403,6 +497,8 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
             }
         }
     }
+    // A helper can survive graceful shutdown; exclude its old frame, not its PID.
+    let previous_windows = main_windows(&client_processes(&path)?, false);
     launch(&path, &[])?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
@@ -413,6 +509,8 @@ pub fn restart(path: &Path, force: bool) -> Result<String, String> {
             if matching_processes(&path)?.is_empty() {
                 continue;
             }
+            on_loading_ui();
+            wait_for_ui(&path, &previous_windows)?;
             return Ok(if was_running {
                 "Steam restarted."
             } else {
@@ -434,6 +532,15 @@ mod tests {
             .unwrap_err()
             .contains("only targets Steam"));
         assert!(validate_path(Path::new(r"C:\does-not-exist\steam.exe")).is_err());
+    }
+    #[test]
+    fn ui_readiness_excludes_bootstrap_login_and_friends_windows() {
+        assert!(is_main_ui_window("Steam", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Steam", "#32770"));
+        assert!(!is_main_ui_window("Steam Sign In", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Updating Steam", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Friends List", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("", "vguiPopupWindow"));
     }
     #[test]
     fn windows_paths_compare_case_and_separators() {

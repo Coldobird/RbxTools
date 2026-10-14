@@ -18,7 +18,8 @@ import {
 } from "./PixelIcons";
 import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
-import { sameStatus, startStatusPolling } from "./statusPolling";
+import { mergeStatus, mergeRestartResult, mergeNetworkResult, startStatusPolling } from "./statusPolling";
+import { canStartAction } from "./actionConcurrency";
 import { connectionLabel } from "./steamStatus";
 import { isUiTestActive, setUiTestActive, testSteamStates, testSteamStatus, testUpdateVersion, type TestSteamState } from "./uiTestView";
 import {
@@ -82,7 +83,12 @@ export default function App() {
   const [page, setPage] = useState<Page>("library");
   const [status, setStatus] = useState(initialStatus);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busyActions, setBusyActions] = useState<string[]>([]);
+  const busy = busyActions[0] ?? null;
+  const restarting = busyActions.includes("restart");
+  const changingNetwork = busyActions.includes("network");
+  const otherActionBusy = busyActions.some(name => name !== "restart" && name !== "network");
+  const setBusy = (name: string | null) => setBusyActions(name ? [name] : []);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; update: boolean } | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
@@ -94,12 +100,22 @@ export default function App() {
   const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [privacyRefresh, setPrivacyRefresh] = useState(0);
   const [startupUpdatePending, setStartupUpdatePending] = useState(false);
-  const [restartPhase, setRestartPhase] = useState<"restarting" | "running" | null>(null);
+  const [restartPhase, setRestartPhase] = useState<"restarting" | "loading-ui" | "running" | null>(null);
   const restartTimer = useRef<number | null>(null);
   const busyRef = useRef(false);
+  const activeActions = useRef(new Set<string>());
+  const restartGeneration = useRef(0);
   const statusGeneration = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!testView || busyActions.length) return;
+    setTestSteamState(!status.steamPath ? "missing" : !status.steamRunning ? "stopped"
+      : status.blocked ? "blocked" : status.steamOnline === null ? "connecting"
+      : status.connectionStale ? status.steamOnline ? "online-last-confirmed" : "offline-last-confirmed"
+      : status.steamOnline ? "online" : "offline");
+  }, [testView, status, busyActions.length]);
 
   useEffect(() => () => {
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
@@ -129,14 +145,15 @@ export default function App() {
     return () => { active = false; };
   }, [modal, liveDesktop, testView, loading, status.blocked, status.steamRunning, testPrivacyState, privacyRefresh]);
 
-  const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "running" && status.steamRunning ? "running" : null;
+  const restartLabel = restartPhase === "restarting" ? "Restarting…" : restartPhase === "loading-ui" ? "Loading UI…" : restartPhase === "running" && status.steamRunning ? "Loaded" : null;
+  const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "loading-ui" ? "connecting" : restartPhase === "running" && status.steamRunning ? "running" : null;
   const networkIcon: IconState = status.blocked ? "blocked" : loading ? "connecting" : status.steamRunning && status.steamOnline === null ? "unknown" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
-  const toolIcon: IconState = restartPhase === "restarting" ? "restarting" : networkIcon ?? restartIcon;
+  const toolIcon: IconState = restartPhase === "restarting" || restartPhase === "loading-ui" ? restartIcon : networkIcon ?? restartIcon;
 
   const toolState = error
     ? { label: "Needs attention", className: "error" }
-    : restartPhase === "restarting"
-      ? { label: busy === "restart" ? "Restarting Steam" : "Confirming Steam startup", className: "busy" }
+    : restartPhase === "restarting" || restartPhase === "loading-ui"
+      ? { label: restartLabel!, className: "busy" }
       : busy || loading
         ? { label: busy === "network" ? "Changing network state" : busy === "privacy" ? "Setting Spacewar privacy" : "Checking Steam", className: "busy" }
       : status.blocked
@@ -203,11 +220,13 @@ export default function App() {
       canPoll: () => !busyRef.current && !document.hidden,
       generation: () => statusGeneration.current,
       onStatus(next) {
-        setStatus((current) => sameStatus(current, next) ? current : next);
+        setStatus((current) => mergeStatus(current, next));
         setLoading(false);
       },
       onError(err) {
-        setStatus((current) => ({ ...current, steamOnline: null }));
+        setStatus((current) => current.steamRunning && !current.blocked && current.steamOnline !== null
+          ? { ...current, connectionStale: true }
+          : current);
         setError(String(err));
         setLoading(false);
       },
@@ -299,10 +318,11 @@ export default function App() {
   }, [modal, testView]);
 
   async function action(name: string, work: () => Promise<void>) {
-    if (busyRef.current) return;
+    if (!canStartAction(activeActions.current, name)) return;
+    activeActions.current.add(name);
     busyRef.current = true;
     statusGeneration.current += 1;
-    setBusy(name);
+    setBusyActions([...activeActions.current]);
     setError(null);
     setNotice(null);
     try {
@@ -315,28 +335,33 @@ export default function App() {
         setError(message);
       }
     } finally {
-      busyRef.current = false;
-      setBusy(null);
+      activeActions.current.delete(name);
+      busyRef.current = activeActions.current.size > 0;
+      setBusyActions([...activeActions.current]);
     }
   }
 
   function restart(force = false) {
-    if (busyRef.current) return;
+    if (!canStartAction(activeActions.current, "restart")) return;
+    restartGeneration.current += 1;
     setModal(null);
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
     setRestartPhase("restarting");
     void action("restart", async () => {
       if (!liveDesktop) {
         await previewDelay();
-        setStatus((current) => ({ ...current, steamRunning: true, steamOnline: !current.blocked }));
-        setTestSteamState(status.blocked ? "blocked" : "online");
+        setRestartPhase("loading-ui");
+        await previewDelay();
+        setStatus((current) => ({ ...current, steamRunning: true, steamOnline: !current.blocked, connectionStale: false }));
         showNotice("Steam restarted (preview only). No process was changed.");
         setRestartPhase("running");
         if (!testView) restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
         return;
       }
-      const message = await restartSteam(force);
-      setStatus(await getStatus());
+      setStatus((current) => ({ ...current, steamOnline: null, connectionStale: false }));
+      const message = await restartSteam(force, () => setRestartPhase("loading-ui"));
+      const next = await getStatus();
+      setStatus(current => mergeRestartResult(current, next));
       showNotice(message);
       setRestartPhase("running");
       restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
@@ -344,20 +369,21 @@ export default function App() {
   }
 
   function toggleNetwork() {
-    if (busyRef.current) return;
+    if (!canStartAction(activeActions.current, "network")) return;
+    const restartRevision = restartGeneration.current;
     void action("network", async () => {
       if (!liveDesktop) {
         await previewDelay();
         const blocked = !status.blocked;
-        setStatus((current) => ({ ...current, blocked, steamOnline: !blocked && current.steamRunning }));
-        setTestSteamState(blocked ? "blocked" : "online");
+        setStatus((current) => ({ ...current, blocked, steamOnline: !blocked && current.steamRunning, connectionStale: false }));
         showNotice(blocked
           ? "Steam network paused (preview only). No traffic was changed."
           : "Steam network restored (preview only). No traffic was changed.");
         return;
       }
       const next = await setBlocked(!status.blocked);
-      setStatus(next);
+      const restartingSession = activeActions.current.has("restart") || restartRevision !== restartGeneration.current;
+      setStatus(current => mergeNetworkResult(current, next, restartingSession));
       const message = next.blocked
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
@@ -484,7 +510,7 @@ export default function App() {
                 setStatus(testSteamStatus(state));
                 setLoading(false);
                 setRestartPhase(null);
-              }}>{testSteamStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
+              }}>{testSteamStates.map(state => <option key={state} value={state}>{state.replace("-last-confirmed", " (last confirmed)")}</option>)}</select></label>
               <label><span className="ui-label">Toast</span><select aria-label="Toast" value={error && notice ? "stacked" : error ? "error" : notice ? notice.update ? "update" : "success" : "none"} onChange={(event) => {
                 const choice = event.target.value;
                 setError(choice === "error" || choice === "stacked" ? "Steam could not reconnect. Check your connection and try again." : null);
@@ -500,16 +526,16 @@ export default function App() {
                 if (choice === "update") setAvailableUpdate({ version: testUpdateVersion });
                 setModal(choice === "none" ? null : choice);
               }}><option value="none">None</option><option value="settings">Settings</option><option value="update">Startup update</option><option value="force">Force restart confirmation</option></select></label>
-              <label><span className="ui-label">Busy state</span><select aria-label="Busy state" value={busy ?? (loading ? "status" : restartPhase === "restarting" ? "confirm-startup" : restartPhase === "running" ? "restart-complete" : "none")} onChange={(event) => {
+              <label><span className="ui-label">Busy state</span><select aria-label="Busy state" value={restartPhase === "loading-ui" ? "confirm-startup" : busy ?? (loading ? "status" : restartPhase === "running" ? "restart-complete" : "none")} onChange={(event) => {
                 const choice = event.target.value;
-                setBusy(["none", "status", "confirm-startup", "restart-complete"].includes(choice) ? null : choice);
+                setBusy(["none", "status", "restart-complete"].includes(choice) ? null : choice === "confirm-startup" ? "restart" : choice);
                 setLoading(choice === "status");
-                setRestartPhase(choice === "restart" || choice === "confirm-startup" ? "restarting" : choice === "restart-complete" ? "running" : null);
+                setRestartPhase(choice === "restart" ? "restarting" : choice === "confirm-startup" ? "loading-ui" : choice === "restart-complete" ? "running" : null);
                 if (choice === "restart-complete") {
                   setStatus(testSteamStatus("online"));
                   setTestSteamState("online");
                 }
-              }}><option value="none">Idle</option><option value="status">Initial Steam check</option><option value="restart">Restarting Steam</option><option value="confirm-startup">Confirming startup</option><option value="restart-complete">Restart complete</option><option value="network">Changing network</option><option value="privacy">Spacewar privacy</option><option value="check-update">Checking updates</option><option value="install-update">Downloading update</option></select></label>
+              }}><option value="none">Idle</option><option value="status">Initial Steam check</option><option value="restart">Restarting Steam</option><option value="confirm-startup">Loading UI</option><option value="restart-complete">Loaded</option><option value="network">Changing network</option><option value="privacy">Spacewar privacy</option><option value="check-update">Checking updates</option><option value="install-update">Downloading update</option></select></label>
               <label><span className="ui-label">Update state</span><select aria-label="Update state" value={updateError ? "error" : availableUpdate ? "available" : "current"} onChange={(event) => {
                 const choice = event.target.value;
                 setAvailableUpdate(choice === "current" ? null : { version: testUpdateVersion });
@@ -612,13 +638,11 @@ export default function App() {
                   <h2>Restart Steam</h2>
                   <p>Close Steam, then bring it right back for a fresh session.</p>
                   <div className="control-status">
-                    <StatusIcon state={restartIcon} label={restartPhase === "restarting" ? "Restarting Steam" : "Steam running"} />
+                    <StatusIcon state={restartIcon} label={restartLabel ?? "Steam running"} />
                     <span className="ui-label">{loading
                       ? "Checking Steam…"
-                      : busy === "restart"
-                        ? "Restarting Steam…"
-                      : restartPhase === "restarting"
-                        ? "Confirming Steam startup…"
+                      : restartLabel
+                        ? restartLabel
                       : status.steamRunning
                         ? "Steam is running"
                         : status.steamPath
@@ -627,10 +651,10 @@ export default function App() {
                   </div>
                   <button
                     className="primary-button"
-                    disabled={!!busy || loading || !status.steamPath}
+                    disabled={restarting || otherActionBusy || loading || !status.steamPath}
                     onClick={() => restart()}
                   >
-                    <span className="ui-label">{busy === "restart" ? "Restarting Steam…" : status.steamRunning ? "Restart Steam" : "Start Steam"}</span>
+                    <span className="ui-label">{restarting ? restartLabel : status.steamRunning ? "Restart Steam" : "Start Steam"}</span>
                   </button>
                   <button className="text-button" disabled={!!busy} onClick={chooseSteam}>
                     <FolderOpen size={15} />
@@ -646,17 +670,17 @@ export default function App() {
                   <p>Pause incoming and outgoing traffic for Steam only.</p>
                   <div className="control-status">
                     <StatusIcon state={networkIcon} label={loading ? "Connecting…" : connectionLabel(status)} />
-                    <span className="ui-label">{busy === "network"
-                      ? status.blocked ? "Restoring connection…" : "Pausing connection…"
+                    <span className="ui-label">{changingNetwork && status.blocked
+                      ? "Restoring connection…"
                       : loading ? "Connecting…" : connectionLabel(status)}</span>
                   </div>
                   <button
                     className={status.blocked ? "primary-button amber-button" : "secondary-button"}
-                    disabled={!!busy || loading || !status.targetPath}
+                    disabled={changingNetwork || otherActionBusy || loading || !status.targetPath}
                     onClick={toggleNetwork}
                   >
-                    <span className="ui-label">{busy === "network"
-                      ? status.blocked ? "Restoring and reconnecting…" : "Pausing connection…"
+                    <span className="ui-label">{changingNetwork && status.blocked
+                      ? "Restoring and reconnecting…"
                       : status.blocked ? "Restore and reconnect" : "Stop network"}</span>
                   </button>
                   {!status.targetPath && (

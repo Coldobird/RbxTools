@@ -1,4 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isUiTestActive, requireLiveUi } from "./uiTestView";
 
@@ -6,6 +6,8 @@ export interface Status {
   steamPath: string | null;
   steamRunning: boolean;
   steamOnline: boolean | null;
+  /** Frontend-only: the connection value was retained after an unavailable check. */
+  connectionStale?: boolean;
   reconnectError?: string | null;
   targetPath: string | null;
   blocked: boolean;
@@ -89,11 +91,20 @@ export async function pickExecutable(
   return invoke("set_path", { kind, path });
 }
 
-export async function restartSteam(force: boolean): Promise<string> {
+export async function restartSteam(force: boolean, onLoadingUi?: () => void): Promise<string> {
   requireLiveUi();
   if (!desktop)
     throw new Error("Restart is available in the installed desktop app.");
-  return invoke("restart_steam", { force });
+  const progress = new Channel<string>();
+  let finished = false;
+  progress.onmessage = phase => {
+    if (!finished && phase === "loading-ui") onLoadingUi?.();
+  };
+  try {
+    return await invoke<string>("restart_steam", { force, progress });
+  } finally {
+    finished = true;
+  }
 }
 
 export async function setBlocked(blocked: boolean): Promise<Status> {

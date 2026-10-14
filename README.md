@@ -43,7 +43,7 @@ Choose the tool you want to use.
 
 Find Steam, manage Spacewar privacy, and check for updates.
 
-<img src="docs/screenshots/settings.png" alt="RBX Tools settings" width="520">
+<img src="docs/screenshots/settings.png" alt="RBX Tools settings" width="540">
 
 </details>
 
