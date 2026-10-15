@@ -360,11 +360,12 @@ export default function App() {
       }
       setStatus((current) => ({ ...current, steamOnline: null, connectionStale: false }));
       const message = await restartSteam(force, () => setRestartPhase("loading-ui"));
+      setStatus(current => ({ ...current, steamRunning: true }));
+      setRestartPhase("running");
+      restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
       const next = await getStatus();
       setStatus(current => mergeRestartResult(current, next));
       showNotice(message);
-      setRestartPhase("running");
-      restartTimer.current = window.setTimeout(() => setRestartPhase(null), 5000);
     });
   }
 

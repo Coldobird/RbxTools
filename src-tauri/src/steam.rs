@@ -343,14 +343,29 @@ pub fn active_steam_id() -> Option<String> {
 }
 
 fn is_main_ui_window(title: &str, class: &str) -> bool {
-    // Ignore separately titled updater, sign-in, Friends, and hidden windows.
-    title == "Steam" && class == "vguiPopupWindow"
+    // Current Steam uses SDL; keep support for the older native frame.
+    // The updater also uses the title "Steam", but has a different class.
+    title == "Steam" && matches!(class, "SDL_app" | "vguiPopupWindow")
+}
+
+fn is_sign_in_window(title: &str, class: &str) -> bool {
+    matches!(title, "Sign in to Steam" | "Steam Sign In")
+        && matches!(class, "SDL_app" | "vguiPopupWindow")
 }
 
 fn main_windows(processes: &[u32], require_response: bool) -> Vec<HWND> {
+    matching_windows(processes, require_response, is_main_ui_window)
+}
+
+fn matching_windows(
+    processes: &[u32],
+    require_response: bool,
+    matches: fn(&str, &str) -> bool,
+) -> Vec<HWND> {
     struct Search<'a> {
         processes: &'a [u32],
         require_response: bool,
+        matches: fn(&str, &str) -> bool,
         found: Vec<HWND>,
     }
     unsafe extern "system" fn visit(window: HWND, data: LPARAM) -> i32 {
@@ -364,7 +379,7 @@ fn main_windows(processes: &[u32], require_response: bool) -> Vec<HWND> {
         let mut class = [0u16; 256];
         let title_len = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32);
         let class_len = GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
-        if !is_main_ui_window(
+        if !(search.matches)(
             &String::from_utf16_lossy(&title[..title_len.max(0) as usize]),
             &String::from_utf16_lossy(&class[..class_len.max(0) as usize]),
         ) {
@@ -389,6 +404,7 @@ fn main_windows(processes: &[u32], require_response: bool) -> Vec<HWND> {
     let mut search = Search {
         processes,
         require_response,
+        matches,
         found: Vec::new(),
     };
     unsafe {
@@ -397,21 +413,53 @@ fn main_windows(processes: &[u32], require_response: bool) -> Vec<HWND> {
     search.found
 }
 
+struct UiReadiness {
+    ready_window: Option<HWND>,
+    ready_since: Instant,
+    sign_in_windows: Vec<HWND>,
+}
+
+impl UiReadiness {
+    fn new(now: Instant) -> Self {
+        Self {
+            ready_window: None,
+            ready_since: now,
+            sign_in_windows: Vec::new(),
+        }
+    }
+
+    fn observe(&mut self, now: Instant, window: Option<HWND>, sign_in: Vec<HWND>) -> bool {
+        let sign_in_closed = self
+            .sign_in_windows
+            .iter()
+            .any(|old| !sign_in.contains(old));
+        self.sign_in_windows = sign_in;
+        if window != self.ready_window || window.is_none() {
+            self.ready_window = window;
+            self.ready_since = now;
+        }
+        // Only a responsive main frame can complete startup. A disappearing
+        // updater, toast, or unrelated window never counts as readiness.
+        window.is_some()
+            && (sign_in_closed
+                || now.duration_since(self.ready_since) >= Duration::from_millis(300))
+    }
+}
+
 fn wait_for_ui(path: &Path, previous_windows: &[HWND]) -> Result<(), String> {
     // A responsive main frame is a readiness heuristic for the native shell;
     // Steam provides no public contract for all embedded Library content loading.
     let deadline = Instant::now() + Duration::from_secs(90);
-    let mut ready_window = None;
-    let mut ready_since = Instant::now();
+    let mut readiness = UiReadiness::new(Instant::now());
     let mut missing_since = None;
     while Instant::now() < deadline {
         if matching_processes(path)?.is_empty() {
-            ready_window = None;
+            readiness = UiReadiness::new(Instant::now());
             // Bootstrap/update handoffs may briefly replace steam.exe.
             if missing_since.get_or_insert_with(Instant::now).elapsed() >= Duration::from_secs(5) {
                 return Err("Steam closed before its UI finished loading. Try again.".into());
             }
-            thread::sleep(Duration::from_millis(300));
+            thread::sleep(Duration::from_millis(100));
             continue;
         }
         missing_since = None;
@@ -419,15 +467,11 @@ fn wait_for_ui(path: &Path, previous_windows: &[HWND]) -> Result<(), String> {
         let window = main_windows(&processes, true)
             .into_iter()
             .find(|window| !previous_windows.contains(window));
-        if window.is_some() && window == ready_window {
-            if ready_since.elapsed() >= Duration::from_secs(2) {
-                return Ok(());
-            }
-        } else {
-            ready_window = window;
-            ready_since = Instant::now();
+        let sign_in = matching_windows(&processes, false, is_sign_in_window);
+        if readiness.observe(Instant::now(), window, sign_in) {
+            return Ok(());
         }
-        thread::sleep(Duration::from_millis(300));
+        thread::sleep(Duration::from_millis(100));
     }
     Err("Steam started, but its main UI did not become ready within 90 seconds. Check Steam for an update or sign-in prompt.".into())
 }
@@ -535,12 +579,80 @@ mod tests {
     }
     #[test]
     fn ui_readiness_excludes_bootstrap_login_and_friends_windows() {
+        assert!(is_main_ui_window("Steam", "SDL_app"));
         assert!(is_main_ui_window("Steam", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Steam", "BootstrapUpdateUIClass"));
         assert!(!is_main_ui_window("Steam", "#32770"));
         assert!(!is_main_ui_window("Steam Sign In", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Sign in to Steam", "SDL_app"));
         assert!(!is_main_ui_window("Updating Steam", "vguiPopupWindow"));
         assert!(!is_main_ui_window("Friends List", "vguiPopupWindow"));
+        assert!(!is_main_ui_window("Steam Service", "SDL_app"));
         assert!(!is_main_ui_window("", "vguiPopupWindow"));
+
+        assert!(is_sign_in_window("Sign in to Steam", "SDL_app"));
+        assert!(is_sign_in_window("Steam Sign In", "vguiPopupWindow"));
+        assert!(!is_sign_in_window("Friends List", "vguiPopupWindow"));
+        assert!(!is_sign_in_window("Steam Service", "SDL_app"));
+    }
+
+    #[test]
+    fn ui_readiness_requires_300ms_with_same_responsive_main_window() {
+        let start = Instant::now();
+        let mut readiness = UiReadiness::new(start);
+        let main = 1usize as HWND;
+
+        assert!(!readiness.observe(start, Some(main), vec![]));
+        assert!(!readiness.observe(start + Duration::from_millis(299), Some(main), vec![]));
+        assert!(readiness.observe(start + Duration::from_millis(300), Some(main), vec![]));
+    }
+
+    #[test]
+    fn ui_readiness_resets_after_window_switch_or_responsiveness_loss() {
+        let start = Instant::now();
+        let mut readiness = UiReadiness::new(start);
+        let first = 1usize as HWND;
+        let second = 2usize as HWND;
+
+        assert!(!readiness.observe(start, Some(first), vec![]));
+        assert!(!readiness.observe(start + Duration::from_millis(299), Some(second), vec![]));
+        assert!(readiness.observe(start + Duration::from_millis(599), Some(second), vec![]));
+
+        let loss = start + Duration::from_millis(600);
+        assert!(!readiness.observe(loss, None, vec![]));
+        assert!(!readiness.observe(loss + Duration::from_millis(299), Some(second), vec![]));
+        assert!(readiness.observe(loss + Duration::from_millis(599), Some(second), vec![]));
+    }
+
+    #[test]
+    fn ui_readiness_accepts_sign_in_disappearing_only_with_responsive_main() {
+        let start = Instant::now();
+        let login = 10usize as HWND;
+        let main = 20usize as HWND;
+
+        let mut no_main = UiReadiness::new(start);
+        assert!(!no_main.observe(start, None, vec![login]));
+        assert!(!no_main.observe(start + Duration::from_millis(100), None, vec![]));
+        // Once the login disappeared without a responsive main frame, its
+        // disappearance is consumed and cannot complete readiness later.
+        assert!(!no_main.observe(start + Duration::from_millis(101), Some(main), vec![]));
+
+        let mut with_main = UiReadiness::new(start);
+        assert!(!with_main.observe(start, None, vec![login]));
+        assert!(with_main.observe(start + Duration::from_millis(100), Some(main), vec![]));
+    }
+
+    #[test]
+    fn ui_readiness_ignores_windows_not_classified_as_sign_in() {
+        let start = Instant::now();
+        let main = 20usize as HWND;
+        let mut readiness = UiReadiness::new(start);
+
+        assert!(!is_sign_in_window("Friends List", "vguiPopupWindow"));
+        assert!(!is_sign_in_window("Steam Service", "SDL_app"));
+        assert!(!readiness.observe(start, None, vec![]));
+        assert!(!readiness.observe(start + Duration::from_millis(100), None, vec![]));
+        assert!(!readiness.observe(start + Duration::from_millis(101), Some(main), vec![]));
     }
     #[test]
     fn windows_paths_compare_case_and_separators() {
