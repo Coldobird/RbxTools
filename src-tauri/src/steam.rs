@@ -617,6 +617,7 @@ mod tests {
         let ready = directory.path().join("fixture-ready");
         let harness = env::current_exe().unwrap();
         fs::copy(&harness, &steam_exe).unwrap();
+        let steam_exe = validate_path(&steam_exe).unwrap();
 
         let child = Command::new(&steam_exe)
             .args([
@@ -645,6 +646,11 @@ mod tests {
             false,
             || loading_ui_called.set(true),
             |path, arguments| {
+                assert_eq!(
+                    arguments,
+                    &["-shutdown"][..],
+                    "stuck-process fixture must never reach relaunch"
+                );
                 use std::os::windows::process::CommandExt;
                 Command::new(path)
                     .args(arguments)
