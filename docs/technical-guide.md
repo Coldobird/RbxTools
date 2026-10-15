@@ -134,14 +134,13 @@ The native updater tests cover version and asset selection, corrupt downloads, r
 cargo test --release --manifest-path src-tauri/Cargo.toml --lib github_update::tests::live_github_download_verifies_without_installing -- --ignored --nocapture
 ```
 
-To check the actual WebView2 sign-in handoff without entering credentials or changing game privacy:
+To run the current Steam IPC privacy tests without changing account privacy:
 
 ```powershell
-cargo run --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --example spacewar_privacy_smoke
+cargo test --manifest-path src-tauri/Cargo.toml --lib spacewar_privacy::tests
 ```
 
-This uses a fresh test browser profile, waits for Steam's sign-in page, and closes it. The unit tests exercise the fixed AppID request, account matching, idempotence, and privacy readback failure. A successful authenticated account change still requires a live Steam sign-in.
-Add `-- --callback` to exercise the native result bridge with a simulated service failure, without requesting or changing account privacy.
+The former WebView2 handoff smoke example has been removed. The current tests cover privacy requests, idempotence, response parsing, and readback failures. They do not change the user's account.
 
 The automated tests check the browser/desktop boundary and Steam path handling. Native network behavior requires an elevated runtime check; compilation alone does not verify packet filtering. Do not test by interrupting a user's active game or Steam session.
 

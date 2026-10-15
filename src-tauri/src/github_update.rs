@@ -679,6 +679,68 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_http_body_fails_after_copying_only_partial_staged_data() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let partial = b"partial update payload";
+        let declared_size = partial.len() as u64 + 4096;
+        let server = thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            connection
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0u8; 2048];
+            let _ = connection.read(&mut request);
+            write!(
+                connection,
+                "HTTP/1.1 200 OK\r\nContent-Length: {declared_size}\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            connection.write_all(partial).unwrap();
+            // Dropping the socket before the declared body is complete makes
+            // reqwest surface a real transport failure while verified_copy is
+            // reading its response body.
+        });
+
+        let directory = tempfile::tempdir().unwrap();
+        let staged = directory.path().join("partial-update.exe");
+        let client = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://{address}/update.exe"))
+            .send()
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        let mut output = fs::File::create(&staged).unwrap();
+        let result = verified_copy(
+            response,
+            &mut output,
+            declared_size,
+            &format!("{:x}", Sha256::digest(partial)),
+        );
+        output.flush().unwrap();
+        drop(output);
+        server.join().unwrap();
+
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("Could not read the update"),
+            "expected a response-body transport error, got: {error}"
+        );
+        assert_eq!(fs::read(&staged).unwrap(), partial);
+        assert!(
+            fs::metadata(&staged).unwrap().len() < declared_size,
+            "the staged file must contain only the bytes received before disconnect"
+        );
+    }
+
+    #[test]
     fn update_must_be_a_windows_x64_executable() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("new.exe");

@@ -61,7 +61,7 @@ silently fall back to a game-scoped API or claim privacy was confirmed.
 - An authenticated mutation has **not** been tested against the user's account.
   Complete the first Steam web sign-in to run that final live check.
 
-Use `cargo run --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol
---example spacewar_privacy_smoke` for the unauthenticated handoff check. It uses a
-separate profile and closes before credentials can be submitted.
-Add `-- --callback` to exercise the native result bridge with a failure code.
+The former WebView2 handoff smoke example described above has been removed.
+Current privacy checks use the running Steam client's IPC. Run
+`cargo test --manifest-path src-tauri/Cargo.toml --lib spacewar_privacy::tests`
+for the current automated coverage without changing account privacy.

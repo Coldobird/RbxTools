@@ -201,7 +201,7 @@ fn run(
     let message = if reconnect {
         "Keeping the existing Steam session".to_string()
     } else {
-        steam_controls::restart(&path, force)?
+        steam_controls::restart(&path, force, || {})?
     };
     let after = steam::matching_processes(&path)?;
     if after.len() != 1 || (!reconnect && after == before) || (reconnect && after != before) {
@@ -344,7 +344,7 @@ fn run(
     if force {
         drop(probe);
         block = Some(network::NetworkBlock::start(&path)?);
-        let message = steam_controls::restart(&path, true)?;
+        let message = steam_controls::restart(&path, true, || {})?;
         let final_pids = steam::matching_processes(&path)?;
         let filters = owned_filters()?;
         if block.is_none() || filters == 0 || final_pids.is_empty() || final_pids == after {

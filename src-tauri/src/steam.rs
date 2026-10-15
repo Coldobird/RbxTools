@@ -477,11 +477,20 @@ fn wait_for_ui(path: &Path, previous_windows: &[HWND]) -> Result<(), String> {
 }
 
 pub fn restart(path: &Path, force: bool, on_loading_ui: impl FnOnce()) -> Result<String, String> {
+    restart_with_launcher(path, force, on_loading_ui, launch)
+}
+
+fn restart_with_launcher(
+    path: &Path,
+    force: bool,
+    on_loading_ui: impl FnOnce(),
+    launcher: impl Fn(&Path, &[&str]) -> Result<(), String>,
+) -> Result<String, String> {
     let path = validate_path(path)?;
     let was_running = !matching_processes(&path)?.is_empty();
     if was_running || (force && !client_processes(&path)?.is_empty()) {
         if !force {
-            launch(&path, &["-shutdown"])?;
+            launcher(&path, &["-shutdown"])?;
             let deadline = Instant::now() + Duration::from_secs(8);
             while !matching_processes(&path)?.is_empty() && Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(250));
@@ -543,7 +552,7 @@ pub fn restart(path: &Path, force: bool, on_loading_ui: impl FnOnce()) -> Result
     }
     // A helper can survive graceful shutdown; exclude its old frame, not its PID.
     let previous_windows = main_windows(&client_processes(&path)?, false);
-    launch(&path, &[])?;
+    launcher(&path, &[])?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if !matching_processes(&path)?.is_empty() {
@@ -570,6 +579,101 @@ pub fn restart(path: &Path, force: bool, on_loading_ui: impl FnOnce()) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use std::{env, fs};
+    use std::process::{Child, Command};
+
+    #[cfg(windows)]
+    struct FixtureProcess(Child);
+
+    #[cfg(windows)]
+    impl Drop for FixtureProcess {
+        fn drop(&mut self) {
+            // The restart fixture is the only process this test owns. Reap it
+            // on every assertion and early-return path before its temp folder
+            // is removed.
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    #[ignore = "Spawned only by restart_reports_a_client_that_ignores_shutdown"]
+    fn restart_fixture() {
+        let ready = env::var_os("RBX_STEAM_RESTART_FIXTURE_READY")
+            .expect("restart fixture must be started by its parent test");
+        fs::write(ready, b"ready").unwrap();
+        // Stay alive beyond the production eight-second graceful-shutdown
+        // deadline. The parent owns and terminates this exact child process.
+        thread::sleep(Duration::from_secs(30));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn restart_reports_a_client_that_ignores_shutdown() {
+        let directory = tempfile::tempdir().unwrap();
+        let steam_exe = directory.path().join("steam.exe");
+        let ready = directory.path().join("fixture-ready");
+        let harness = env::current_exe().unwrap();
+        fs::copy(&harness, &steam_exe).unwrap();
+
+        let child = Command::new(&steam_exe)
+            .args([
+                "--exact",
+                "steam::tests::restart_fixture",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("RBX_STEAM_RESTART_FIXTURE_READY", &ready)
+            .spawn()
+            .unwrap();
+        let _fixture = FixtureProcess(child);
+
+        let ready_deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.is_file() && Instant::now() < ready_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ready.is_file(), "fixture did not report readiness");
+        let fixture_pids = matching_processes(&steam_exe).unwrap();
+        assert_eq!(fixture_pids.len(), 1, "expected only the owned fixture");
+
+        let loading_ui_called = std::cell::Cell::new(false);
+        let started = Instant::now();
+        let result = restart_with_launcher(
+            &steam_exe,
+            false,
+            || loading_ui_called.set(true),
+            |path, arguments| {
+                use std::os::windows::process::CommandExt;
+                Command::new(path)
+                    .args(arguments)
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|error| format!("Could not start the restart fixture: {error}"))
+            },
+        );
+        let elapsed = started.elapsed();
+
+        assert_eq!(result.unwrap_err(), "STEAM_STILL_RUNNING");
+        assert!(
+            (Duration::from_secs(7)..=Duration::from_secs(12)).contains(&elapsed),
+            "expected the production eight-second shutdown deadline, got {elapsed:?}"
+        );
+        assert!(
+            !loading_ui_called.get(),
+            "loading UI callback ran before Steam finished closing"
+        );
+        assert_eq!(
+            matching_processes(&steam_exe).unwrap(),
+            fixture_pids,
+            "restart must leave the exact test fixture alive"
+        );
+    }
+
     #[test]
     fn only_accepts_steam_executable() {
         assert!(validate_path(Path::new(r"C:\Windows\notepad.exe"))
