@@ -1,5 +1,19 @@
 import type { Status } from "./api";
 
+export const CONNECTION_GRACE_MS = 30_000;
+
+// Reset on resume so time spent minimized never ages a retained reading.
+export function createConnectionGrace(now = Date.now) {
+  let lastResponse = now();
+  return {
+    reset() { lastResponse = now(); },
+    observe(status?: Status) {
+      if (status && (status.steamOnline !== null || !status.steamRunning || status.blocked)) lastResponse = now();
+      return now() - lastResponse >= CONNECTION_GRACE_MS;
+    },
+  };
+}
+
 type PollOptions = {
   read: () => Promise<Status>;
   canPoll: () => boolean;
@@ -50,13 +64,15 @@ export function sameStatus(left: Status, right: Status): boolean {
     && left.steamRunning === right.steamRunning
     && left.steamOnline === right.steamOnline
     && !!left.connectionStale === !!right.connectionStale
+    && !!left.connectionPending === !!right.connectionPending
+    && left.restoringSince === right.restoringSince
     && left.reconnectError === right.reconnectError
     && left.targetPath === right.targetPath
     && left.blocked === right.blocked
     && left.elevated === right.elevated;
 }
 
-export function mergeStatus(previous: Status, next: Status): Status {
+export function mergeStatus(previous: Status, next: Status, expired = true, now = Date.now()): Status {
   const keepConnection = next.steamOnline === null
     && previous.steamOnline !== null
     && next.steamPath !== null
@@ -66,7 +82,12 @@ export function mergeStatus(previous: Status, next: Status): Status {
   const merged = {
     ...next,
     steamOnline: keepConnection ? previous.steamOnline : next.steamOnline,
-    connectionStale: keepConnection,
+    connectionStale: keepConnection && expired,
+    connectionPending: next.steamOnline === null && !expired,
+    restoringSince: previous.restoringSince !== undefined
+      && now - previous.restoringSince < CONNECTION_GRACE_MS
+      && next.steamRunning && !next.blocked && next.steamOnline !== true && !next.reconnectError
+      ? previous.restoringSince : undefined,
   };
   return sameStatus(previous, merged) ? previous : merged;
 }

@@ -18,7 +18,7 @@ import {
 } from "./PixelIcons";
 import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
-import { mergeStatus, mergeRestartResult, mergeNetworkResult, startStatusPolling } from "./statusPolling";
+import { createConnectionGrace, mergeStatus, mergeRestartResult, mergeNetworkResult, startStatusPolling } from "./statusPolling";
 import { canStartAction } from "./actionConcurrency";
 import { connectionLabel } from "./steamStatus";
 import { isUiTestActive, setUiTestActive, testSteamStates, testSteamStatus, testUpdateVersion, type TestSteamState } from "./uiTestView";
@@ -131,7 +131,8 @@ export default function App() {
 
   const restartLabel = restartPhase === "restarting" ? "Restarting…" : restartPhase === "loading-ui" ? "Loading UI…" : restartPhase === "running" && status.steamRunning ? "Loaded" : null;
   const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "loading-ui" ? "connecting" : restartPhase === "running" && status.steamRunning ? "running" : null;
-  const networkIcon: IconState = status.blocked ? "blocked" : loading ? "connecting" : status.steamRunning && status.steamOnline === null ? "unknown" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
+  const networkLabel = changingNetwork && status.blocked ? "Restoring connection…" : loading ? "Connecting…" : connectionLabel(status);
+  const networkIcon: IconState = changingNetwork && status.blocked || status.restoringSince !== undefined || loading ? "connecting" : status.blocked ? "blocked" : status.steamRunning && status.steamOnline === null ? "unknown" : status.steamOnline === true ? "connected" : status.steamRunning && status.steamOnline === false ? "blocked" : null;
   const toolIcon: IconState = restartPhase === "restarting" || restartPhase === "loading-ui" ? restartIcon : networkIcon ?? restartIcon;
 
   const toolState = error
@@ -156,6 +157,7 @@ export default function App() {
   }
 
   function showNotice(message: string, update = false) {
+    if (!update) return;
     setNotice({ message, update });
   }
 
@@ -206,25 +208,31 @@ export default function App() {
       setLoading(false);
       return;
     }
+    const grace = createConnectionGrace();
     const poller = startStatusPolling({
       read: getStatus,
       canPoll: () => !busyRef.current && !document.hidden,
       generation: () => statusGeneration.current,
       onStatus(next) {
         statusReady.current = true;
-        setStatus((current) => mergeStatus(current, next));
+        const expired = grace.observe(next);
+        setStatus((current) => mergeStatus(current, next, expired));
         setLoading(false);
       },
       onError(err) {
-        setStatus((current) => current.steamRunning && !current.blocked && current.steamOnline !== null
-          ? { ...current, connectionStale: true }
-          : current);
-        setError(String(err));
+        const expired = grace.observe();
+        setStatus((current) => current.steamRunning && !current.blocked
+          ? mergeStatus(current, { ...current, steamOnline: null }, expired) : current);
+        if (expired) setError(String(err));
         setLoading(false);
       },
     });
     const onVisibilityChange = () => {
-      if (!document.hidden) void poller.refresh();
+      if (!document.hidden) {
+        grace.reset();
+        setStatus(current => ({ ...current, connectionStale: false }));
+        void poller.refresh();
+      }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
@@ -370,6 +378,7 @@ export default function App() {
   function toggleNetwork() {
     if (!canStartAction(activeActions.current, "network")) return;
     const restartRevision = restartGeneration.current;
+    const restoringSince = status.blocked ? Date.now() : undefined;
     void action("network", async () => {
       if (!liveDesktop) {
         await previewDelay();
@@ -382,7 +391,9 @@ export default function App() {
       }
       const next = await setBlocked(!status.blocked);
       const restartingSession = activeActions.current.has("restart") || restartRevision !== restartGeneration.current;
-      setStatus(current => mergeNetworkResult(current, next, restartingSession));
+      setStatus(current => ({ ...mergeNetworkResult(current, next, restartingSession),
+        restoringSince: !next.blocked && next.steamRunning && next.steamOnline !== true && !next.reconnectError
+          ? restoringSince : undefined }));
       const message = next.blocked
         ? "Steam network traffic is paused."
         : "Steam network access is restored.";
@@ -531,7 +542,7 @@ export default function App() {
                 const choice = event.target.value;
                 setError(choice === "error" || choice === "stacked" ? "Steam could not reconnect. Check your connection and try again." : null);
                 setNotice(null);
-                if (choice === "success") showNotice("Steam network access is restored.");
+                if (choice === "success") setNotice({ message: "Steam network access is restored.", update: false });
                 if (choice === "update" || choice === "stacked") {
                   setAvailableUpdate({ version: testUpdateVersion });
                   showNotice(`RBX Tools v${testUpdateVersion} is available.`, true);
@@ -685,10 +696,8 @@ export default function App() {
                   <h2>{status.blocked ? "Network paused" : "Stop network"}</h2>
                   <p>Pause incoming and outgoing traffic for Steam only.</p>
                   <div className="control-status">
-                    <StatusIcon state={networkIcon} label={loading ? "Connecting…" : connectionLabel(status)} />
-                    <span className="ui-label">{changingNetwork && status.blocked
-                      ? "Restoring connection…"
-                      : loading ? "Connecting…" : connectionLabel(status)}</span>
+                    <StatusIcon state={networkIcon} label={networkLabel} />
+                    <span className="ui-label">{networkLabel}</span>
                   </div>
                   <button
                     className={status.blocked ? "primary-button amber-button" : "secondary-button"}

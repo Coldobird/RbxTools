@@ -120,7 +120,26 @@ pub fn recover(
     if pids.len() != 1 || !current() {
         return Ok(None);
     }
-    if steam_connection::online(steam_path)? {
+    // The status observer may own the single-query guard right after restore.
+    // Give it time to finish rather than treating contention as recovery failure.
+    let observed_online = || {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if !current() {
+                return Ok(None);
+            }
+            match steam_connection::online(steam_path) {
+                Err(error) if error.contains("still pending") && Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(100));
+                }
+                result => return result.map(Some),
+            }
+        }
+    };
+    let Some(online) = observed_online()? else {
+        return Ok(None);
+    };
+    if online {
         return Ok(None);
     }
     let same_session =
@@ -159,7 +178,10 @@ pub fn recover(
             return Err("Steam reconnect requests finished, but Steam is still offline.".into());
         }
         // Use the independent, game-free reader for the final truth.
-        if !steam_connection::online(steam_path)? {
+        let Some(online) = observed_online()? else {
+            return Ok(None);
+        };
+        if !online {
             return Err("Steam has not confirmed server login after reconnect.".into());
         }
         return Ok(Some(result));

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Status } from "./api";
-import { mergeStatus, mergeRestartResult, mergeNetworkResult, sameStatus, startStatusPolling } from "./statusPolling";
+import { createConnectionGrace, mergeStatus, mergeRestartResult, mergeNetworkResult, sameStatus, startStatusPolling } from "./statusPolling";
 
 const status: Status = {
   steamPath: "C:\\Steam\\steam.exe",
@@ -94,6 +94,33 @@ describe("status polling", () => {
 });
 
 describe("last confirmed connection", () => {
+  it("waits 30 seconds without a response and gives resume a fresh grace period", () => {
+    let now = 0;
+    const grace = createConnectionGrace(() => now);
+    const unavailable = { ...status, steamOnline: null };
+    now = 29_999;
+    expect(mergeStatus(status, unavailable, grace.observe(unavailable))).toMatchObject({ steamOnline: true, connectionStale: false });
+    now = 30_000;
+    expect(mergeStatus(status, unavailable, grace.observe())).toMatchObject({ steamOnline: true, connectionStale: true });
+    now = 120_000;
+    grace.reset();
+    expect(grace.observe(unavailable)).toBe(false);
+    now += 29_999;
+    expect(grace.observe(unavailable)).toBe(false);
+    now++;
+    expect(grace.observe(unavailable)).toBe(true);
+    expect(grace.observe(status)).toBe(false);
+  });
+
+  it("keeps restoring through missing or offline readings until confirmation, failure, or 30 seconds", () => {
+    const restoring = { ...status, steamOnline: null, restoringSince: 0 };
+    expect(mergeStatus(restoring, { ...status, steamOnline: null }, false, 29_999).restoringSince).toBe(0);
+    expect(mergeStatus(restoring, { ...status, steamOnline: false }, false, 29_999).restoringSince).toBe(0);
+    expect(mergeStatus(restoring, { ...status, steamOnline: null }, true, 30_000).restoringSince).toBeUndefined();
+    expect(mergeStatus(restoring, status, false, 1000).restoringSince).toBeUndefined();
+    expect(mergeStatus(restoring, { ...status, steamOnline: false, reconnectError: "failed" }, false, 1000).restoringSince).toBeUndefined();
+  });
+
   it.each([true, false])("retains confirmed %s across unavailable checks, then accepts a real response", (online) => {
     const confirmed = { ...status, steamOnline: online };
     const unavailable = { ...status, steamOnline: null, reconnectError: "temporary failure" };

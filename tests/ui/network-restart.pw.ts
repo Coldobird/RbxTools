@@ -34,7 +34,7 @@ test("restart reports each phase and disables only its own action until UI loads
   await page.clock.runFor(650);
   await expect(status).toHaveText("Loaded");
   await expect(page.getByRole("button", { name: "Restart Steam", exact: true })).toBeEnabled();
-  await expect(page.getByRole("status")).toContainText("Steam restarted");
+  await expect(page.getByRole("status")).toHaveCount(0);
 });
 
 for (const first of ["restart", "network"] as const) {
@@ -64,7 +64,7 @@ for (const first of ["restart", "network"] as const) {
     await page.clock.runFor(650);
     await expect(page.getByRole("button", { name: "Restart Steam", exact: true })).toBeEnabled();
     await expect(page.getByRole("heading", { name: "Network paused", exact: true })).toBeVisible();
-    await expect(page.locator(".network-card .control-status")).toContainText("Incoming and outgoing traffic blocked");
+    await expect(page.locator(".network-card .control-status")).toContainText("Steam offline");
     await page.getByRole("button", { name: "Show controls", exact: true }).click();
     await expect(page.getByLabel("Steam state", { exact: true })).toHaveValue("blocked");
   });
@@ -109,7 +109,7 @@ for (const force of [false, true]) {
       await page.getByRole("button", { name: "Restart Steam", exact: true }).click();
     }
 
-    await expect(page.getByRole("status")).toContainText("Steam restarted");
+    await expect(page.getByRole("status")).toHaveCount(0);
     await expect(restore).toBeEnabled();
     await expect(page.getByRole("heading", { name: "Network paused", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Show controls", exact: true }).click();

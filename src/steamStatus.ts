@@ -1,9 +1,11 @@
 import type { Status } from "./api";
 
 export function connectionLabel(status: Status): string {
-  if (status.blocked) return "Incoming and outgoing traffic blocked";
   if (!status.steamPath) return "Steam location needed";
   if (!status.steamRunning) return "Steam is not running";
+  if (status.blocked) return "Steam offline";
+  if (status.restoringSince !== undefined) return "Restoring connection…";
+  if (status.connectionPending && status.steamOnline === null) return "Connecting…";
   if (status.connectionStale && status.steamOnline !== null) {
     return status.steamOnline ? "Last confirmed online" : "Last confirmed offline";
   }

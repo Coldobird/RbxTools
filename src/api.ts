@@ -8,6 +8,8 @@ export interface Status {
   steamOnline: boolean | null;
   /** Frontend-only: the connection value was retained after an unavailable check. */
   connectionStale?: boolean;
+  connectionPending?: boolean;
+  restoringSince?: number;
   reconnectError?: string | null;
   targetPath: string | null;
   blocked: boolean;
@@ -34,6 +36,18 @@ const previewStatus: Status = {
 };
 
 export async function getStatus(): Promise<Status> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      return await readStatus();
+    } catch (error) {
+      if (!String(error).includes("still pending") || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+}
+
+async function readStatus(): Promise<Status> {
   if (!desktop || isUiTestActive()) return previewStatus;
 
   return new Promise<Status>((resolve, reject) => {

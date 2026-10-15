@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 type FailureState = {
   blocked: boolean;
-  online: boolean;
+  online: boolean | null;
+  statusError: string | null;
   reconnectError: string | null;
   restartCalls: boolean[];
   installCalls: number;
@@ -14,6 +15,7 @@ async function mockDesktop(page: Page, scenario: "restart" | "reconnect" | "upda
     const state = {
       blocked: scenario === "reconnect",
       online: scenario !== "reconnect",
+      statusError: null as string | null,
       reconnectError: null as string | null,
       restartCalls: [] as boolean[],
       installCalls: 0,
@@ -34,7 +36,9 @@ async function mockDesktop(page: Page, scenario: "restart" | "reconnect" | "upda
         unregisterCallback: () => {},
         invoke: async (command: string, args: { force?: boolean; blocked?: boolean; progress?: { onmessage: (phase: string) => void } }) => {
           switch (command) {
-            case "get_status": return status();
+            case "get_status":
+              if (state.statusError) throw state.statusError;
+              return status();
             case "get_spacewar_privacy": return false;
             case "get_github_update": return { update: scenario === "update" ? { version: "99.0.0" } : null };
             case "restart_steam":
@@ -70,17 +74,18 @@ test("stuck shutdown asks before forcing and supports cancel and retry", async (
   await expect(restart).toBeEnabled();
   await restart.click();
   await page.getByRole("button", { name: "Force restart", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Steam restarted.");
+  await expect(restart).toBeEnabled();
+  await expect(page.getByRole("status")).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { failureState: FailureState }).failureState.restartCalls)).toEqual([false, false, true]);
 });
 
-test("connection loss during reconnect reports offline and recovers on a later status check", async ({ page }) => {
+test("connection loss during reconnect keeps the restoring label until a failure or confirmation", async ({ page }) => {
   await page.clock.install();
   await mockDesktop(page, "reconnect");
   await page.locator(".nav-item").filter({ hasText: "Steamy Friends" }).click();
   await page.getByRole("button", { name: "Restore and reconnect", exact: true }).click();
   const networkStatus = page.locator(".network-card .control-status");
-  await expect(networkStatus).toContainText("Steam offline");
+  await expect(networkStatus).toContainText("Restoring connection…");
   await page.evaluate(() => {
     (window as unknown as { failureState: FailureState }).failureState.reconnectError = "Steam reconnect requests finished, but Steam is still offline.";
   });
@@ -94,6 +99,51 @@ test("connection loss during reconnect reports offline and recovers on a later s
   });
   await page.clock.runFor(3100);
   await expect(networkStatus).toContainText("Steam online");
+});
+
+test("missing responses get 30 seconds of grace, including a fresh period after resume", async ({ page }) => {
+  await page.clock.install();
+  await mockDesktop(page, "restart");
+  await page.locator(".nav-item").filter({ hasText: "Steamy Friends" }).click();
+  const row = page.locator(".network-card .control-status");
+  await expect(row).toContainText("Steam online");
+  await page.evaluate(() => { (window as unknown as { failureState: FailureState }).failureState.online = null; });
+  await page.clock.runFor(27_000);
+  await expect(row).toContainText("Steam online");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.clock.runFor(3100);
+  await expect(row).toContainText("Last confirmed online");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.runFor(120_000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(row).toContainText("Steam online");
+  await page.clock.runFor(27_000);
+  await expect(row).toContainText("Steam online");
+  await page.clock.runFor(3100);
+  await expect(row).toContainText("Last confirmed online");
+});
+
+test("pending status queries stay quiet for 30 seconds", async ({ page }) => {
+  await page.clock.install();
+  await mockDesktop(page, "restart");
+  await page.locator(".nav-item").filter({ hasText: "Steamy Friends" }).click();
+  const row = page.locator(".network-card .control-status");
+  await expect(row).toContainText("Steam online");
+  await page.evaluate(() => {
+    (window as unknown as { failureState: FailureState }).failureState.statusError = "Steam status check is still pending.";
+  });
+  await page.clock.runFor(29_000);
+  await expect(row).toContainText("Steam online");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.clock.runFor(4100);
+  await expect(page.getByRole("alert")).toContainText("still pending");
+  await expect(row).toContainText("Last confirmed online");
 });
 
 test("interrupted update keeps its dialog open and allows another attempt", async ({ page }) => {
