@@ -6,7 +6,10 @@ test("last confirmed labels give way to a confirmed Steam shutdown", async ({ pa
   const row = page.locator(".network-card .control-status");
   for (const state of ["online", "offline"]) {
     await page.getByLabel("Steam state", { exact: true }).selectOption(`${state}-last-confirmed`);
-    await expect(row).toContainText(`Steam ${state}`);
+    await expect(row).toContainText(`Last confirmed ${state}`);
+    await page.getByLabel("Page", { exact: true }).selectOption("library");
+    await expect(page.locator(".art-status")).toContainText(`Last confirmed ${state}`);
+    await page.getByLabel("Page", { exact: true }).selectOption("steamy");
     await page.getByLabel("Steam state", { exact: true }).selectOption("stopped");
     await expect(row).toContainText("Steam is not running");
     await expect(row).not.toHaveAttribute("title");

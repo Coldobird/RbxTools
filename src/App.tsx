@@ -98,7 +98,8 @@ export default function App() {
   const [spacewarPrivate, setSpacewarPrivate] = useState<boolean | null>(null);
   const [privacyChecking, setPrivacyChecking] = useState(false);
   const [privacyError, setPrivacyError] = useState<string | null>(null);
-  const [privacyRefresh, setPrivacyRefresh] = useState(0);
+  const privacyStartupAttempted = useRef(false);
+  const statusReady = useRef(false);
   const [startupUpdatePending, setStartupUpdatePending] = useState(false);
   const [restartPhase, setRestartPhase] = useState<"restarting" | "loading-ui" | "running" | null>(null);
   const restartTimer = useRef<number | null>(null);
@@ -122,28 +123,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (modal !== "settings") return;
-    let active = true;
-    setSpacewarPrivate(null);
-    setPrivacyError(null);
-    setPrivacyChecking(false);
-    if (loading || status.blocked || ((liveDesktop || testView) && !status.steamRunning)) return;
-    if (!liveDesktop) {
-      setSpacewarPrivate(testPrivacyState === "private" ? true : testPrivacyState === "public" ? false : null);
-      setPrivacyChecking(testPrivacyState === "checking");
-      setPrivacyError(testPrivacyState === "error" ? "Could not check Spacewar privacy. Try again." : null);
-      return;
-    }
-    setPrivacyChecking(true);
-    void getSpacewarPrivacy().then(result => {
-      if (active) setSpacewarPrivate(result);
-    }).catch(err => {
-      if (active) setPrivacyError(String(err));
-    }).finally(() => {
-      if (active) setPrivacyChecking(false);
-    });
-    return () => { active = false; };
-  }, [modal, liveDesktop, testView, loading, status.blocked, status.steamRunning, testPrivacyState, privacyRefresh]);
+    if (liveDesktop) return;
+    setSpacewarPrivate(testPrivacyState === "private" ? true : testPrivacyState === "public" ? false : null);
+    setPrivacyChecking(testPrivacyState === "checking");
+    setPrivacyError(testPrivacyState === "error" ? "Could not check Spacewar privacy. Try again." : null);
+  }, [liveDesktop, testPrivacyState]);
 
   const restartLabel = restartPhase === "restarting" ? "Restarting…" : restartPhase === "loading-ui" ? "Loading UI…" : restartPhase === "running" && status.steamRunning ? "Loaded" : null;
   const restartIcon: IconState = restartPhase === "restarting" ? "restarting" : restartPhase === "loading-ui" ? "connecting" : restartPhase === "running" && status.steamRunning ? "running" : null;
@@ -159,7 +143,7 @@ export default function App() {
       : status.blocked
         ? { label: "Steam network blocked", className: "blocked" }
         : status.steamOnline === true
-          ? { label: "Steam online", className: "connected" }
+          ? { label: connectionLabel(status), className: "connected" }
         : status.steamRunning
           ? { label: connectionLabel(status), className: "idle" }
           : status.steamPath
@@ -194,6 +178,13 @@ export default function App() {
   }, [testView]);
 
   useEffect(() => {
+    privacyStartupAttempted.current = false;
+    statusReady.current = false;
+    if (!testView && desktop) {
+      setSpacewarPrivate(null);
+      setPrivacyError(null);
+      setPrivacyChecking(false);
+    }
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
     setRestartPhase(null);
     setModalState(null);
@@ -220,6 +211,7 @@ export default function App() {
       canPoll: () => !busyRef.current && !document.hidden,
       generation: () => statusGeneration.current,
       onStatus(next) {
+        statusReady.current = true;
         setStatus((current) => mergeStatus(current, next));
         setLoading(false);
       },
@@ -240,6 +232,12 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [testView]);
+
+  useEffect(() => {
+    if (!liveDesktop || !statusReady.current || loading || busy || status.blocked
+      || !status.steamRunning || privacyStartupAttempted.current) return;
+    checkPrivacy();
+  }, [liveDesktop, loading, busy, status.blocked, status.steamRunning]);
 
   useEffect(() => {
     if (!error || testView) return;
@@ -392,11 +390,28 @@ export default function App() {
     });
   }
 
+  function checkPrivacy() {
+    if (!canStartAction(activeActions.current, "privacy-check")) return;
+    privacyStartupAttempted.current = true;
+    void action("privacy-check", async () => {
+      setPrivacyChecking(true);
+      setPrivacyError(null);
+      try {
+        setSpacewarPrivate(await getSpacewarPrivacy());
+      } catch (err) {
+        setSpacewarPrivate(null);
+        setPrivacyError(String(err));
+      } finally {
+        setPrivacyChecking(false);
+      }
+    });
+  }
+
   function openPrivacy() {
     if (privacyChecking) return;
     if (spacewarPrivate === null) {
       if (!liveDesktop) setTestPrivacyState("public");
-      setPrivacyRefresh(value => value + 1);
+      else checkPrivacy();
       return;
     }
     const makePrivate = !spacewarPrivate;
