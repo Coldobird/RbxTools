@@ -322,6 +322,30 @@ fn launch(path: &Path, arguments: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
+/// Ask an already-running Steam client to leave its deliberate Offline Mode.
+/// Dispatching the URI is asynchronous and does not prove Steam connected.
+pub fn request_online(path: &Path) -> Result<(), String> {
+    if matching_processes(path)?.is_empty() {
+        return Ok(());
+    }
+    let uri = wide("steam://open/goonline");
+    let empty = wide("");
+    let directory = wide(
+        path.parent()
+            .ok_or("Steam folder is unavailable")?
+            .as_os_str(),
+    );
+    let result =
+        unsafe { rbx_shell_execute_unelevated(uri.as_ptr(), empty.as_ptr(), directory.as_ptr()) };
+    if result < 0 {
+        return Err(format!(
+            "Could not ask Steam to go online (HRESULT 0x{:08X}).",
+            result as u32
+        ));
+    }
+    Ok(())
+}
+
 pub fn active_steam_id() -> Option<String> {
     // Public account identifier only: never read Steam's credential storage or
     // initialize a game just to determine which account is active.
@@ -552,7 +576,9 @@ fn restart_with_launcher(
     }
     // A helper can survive graceful shutdown; exclude its old frame, not its PID.
     let previous_windows = main_windows(&client_processes(&path)?, false);
-    launcher(&path, &[])?;
+    // Steam reads this switch at startup; later launches outside RBX Tools do
+    // not inherit it. The network block still works if CEF is unavailable.
+    launcher(&path, &["-cef-enable-debugging"])?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if !matching_processes(&path)?.is_empty() {
@@ -579,9 +605,9 @@ fn restart_with_launcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::{Child, Command};
     #[cfg(windows)]
     use std::{env, fs};
-    use std::process::{Child, Command};
 
     #[cfg(windows)]
     struct FixtureProcess(Child);
@@ -677,6 +703,43 @@ mod tests {
             matching_processes(&steam_exe).unwrap(),
             fixture_pids,
             "restart must leave the exact test fixture alive"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn restart_forwards_cef_debugging_on_final_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let steam_exe = directory.path().join("steam.exe");
+        fs::write(&steam_exe, b"test executable placeholder").unwrap();
+
+        let launched_with = std::cell::RefCell::new(Vec::new());
+        let result = restart_with_launcher(
+            &steam_exe,
+            false,
+            || panic!("loading UI callback must not run when launch is intercepted"),
+            |path, arguments| {
+                launched_with.borrow_mut().push((
+                    path.to_path_buf(),
+                    arguments
+                        .iter()
+                        .map(|argument| argument.to_string())
+                        .collect(),
+                ));
+                // Stop immediately after intercepting the final launch. This
+                // verifies its arguments without starting Steam or waiting for UI.
+                Err("final launch intercepted".into())
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "final launch intercepted");
+        assert_eq!(
+            launched_with.into_inner(),
+            vec![(
+                validate_path(&steam_exe).unwrap(),
+                vec!["-cef-enable-debugging".to_string()]
+            )],
+            "the final Steam launch must enable CEF debugging"
         );
     }
 

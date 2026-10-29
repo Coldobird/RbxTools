@@ -239,10 +239,16 @@ fn update_blocked(
             .take()
             .map(|started| started.elapsed());
         let revision = state.network_revision.fetch_add(1, Ordering::SeqCst) + 1;
+        // Dispatch before allowing another block. The URI handler is
+        // asynchronous, so Steam may process the request after this returns.
+        let steam_path = resolve_steam_path(&state).ok().flatten().map(PathBuf::from);
+        if let Some(path) = steam_path.as_deref() {
+            let _ = steam::request_online(path);
+        }
         drop(network);
         if blocked_for.is_some() {
-            if let Some(path) = resolve_steam_path(&state)? {
-                start_reconnect_assist(app, PathBuf::from(path), revision);
+            if let Some(path) = steam_path {
+                start_reconnect_assist(app, path, revision);
             }
         }
         return status(&state);
@@ -475,7 +481,16 @@ pub fn run() {
             if let Some(state) = app.try_state::<AppState>() {
                 state.network_revision.fetch_add(1, Ordering::SeqCst);
                 if let Ok(mut network) = state.network.lock() {
-                    *network = None;
+                    // Do not ask Steam to reconnect while an explicitly
+                    // owned WFP session could still be blocking it.
+                    let restored = steam_controls::restore_network(&mut network).is_ok();
+                    if restored {
+                        if let Some(path) = steam::detect() {
+                            // The shell helper initializes an STA; Tauri's event
+                            // thread may already have a different COM apartment.
+                            let _ = std::thread::spawn(move || steam::request_online(&path)).join();
+                        }
+                    }
                 }
             }
         }
