@@ -364,11 +364,19 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");
-    app.run(|_app, event| {
+    app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Ready) {
             github_update::complete_startup();
         }
-        // Steam stays offline after exit on purpose: reconnecting could end a
-        // family-shared game session. Reopen RBX Tools to bring it back online.
+        if matches!(event, tauri::RunEvent::Exit) {
+            // Closing RBX Tools hands Steam back in its normal online state.
+            let state = app.state::<AppState>();
+            let was_paused = state.pause.lock().ok().and_then(|mut pause| pause.take());
+            if was_paused.is_some() {
+                if let Ok(Some(path)) = resolve_steam_path(&state) {
+                    let _ = steam_offline::SteamControls::local(Path::new(&path)).go_online();
+                }
+            }
+        }
     });
 }
