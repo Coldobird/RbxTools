@@ -1,6 +1,7 @@
 use crate::{network::NetworkBlock, steam};
 use std::path::Path;
 
+#[allow(dead_code)] // Used by the steam_controls_smoke diagnostic.
 pub fn restore_network(network: &mut Option<NetworkBlock>) -> Result<(), String> {
     if let Some(block) = network.as_mut() {
         block.close()?;

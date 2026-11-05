@@ -322,30 +322,6 @@ fn launch(path: &Path, arguments: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
-/// Ask an already-running Steam client to leave its deliberate Offline Mode.
-/// Dispatching the URI is asynchronous and does not prove Steam connected.
-pub fn request_online(path: &Path) -> Result<(), String> {
-    if matching_processes(path)?.is_empty() {
-        return Ok(());
-    }
-    let uri = wide("steam://open/goonline");
-    let empty = wide("");
-    let directory = wide(
-        path.parent()
-            .ok_or("Steam folder is unavailable")?
-            .as_os_str(),
-    );
-    let result =
-        unsafe { rbx_shell_execute_unelevated(uri.as_ptr(), empty.as_ptr(), directory.as_ptr()) };
-    if result < 0 {
-        return Err(format!(
-            "Could not ask Steam to go online (HRESULT 0x{:08X}).",
-            result as u32
-        ));
-    }
-    Ok(())
-}
-
 pub fn active_steam_id() -> Option<String> {
     // Public account identifier only: never read Steam's credential storage or
     // initialize a game just to determine which account is active.
@@ -576,8 +552,7 @@ fn restart_with_launcher(
     }
     // A helper can survive graceful shutdown; exclude its old frame, not its PID.
     let previous_windows = main_windows(&client_processes(&path)?, false);
-    // Steam reads this switch at startup; later launches outside RBX Tools do
-    // not inherit it. The network block still works if CEF is unavailable.
+    // Fast offline/online controls need Steam's loopback client API.
     launcher(&path, &["-cef-enable-debugging"])?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {

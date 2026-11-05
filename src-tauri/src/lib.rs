@@ -1,9 +1,13 @@
 mod github_update;
+// WFP blocking and the Spacewar reconnect helper remain for the diagnostics examples.
+#[allow(dead_code)]
 mod network;
 mod spacewar_privacy;
 mod steam;
 mod steam_connection;
 mod steam_controls;
+mod steam_offline;
+#[allow(dead_code)]
 mod steam_reconnect;
 #[allow(dead_code)]
 mod steamworks;
@@ -12,10 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Mutex,
     },
-    time::Instant,
 };
 use tauri::Manager;
 
@@ -27,11 +30,8 @@ struct Preferences {
 
 struct AppState {
     preferences: Mutex<Preferences>,
-    network: Mutex<Option<network::NetworkBlock>>,
-    blocked_at: Mutex<Option<Instant>>,
-    network_revision: AtomicU64,
-    reconnect_assisting: AtomicBool,
-    reconnect_error: Mutex<Option<String>>,
+    /// How RBX Tools took Steam offline, while it is paused.
+    pause: Mutex<Option<steam_offline::Pause>>,
     status_checking: AtomicBool,
     restarting: AtomicBool,
     privacy_changing: AtomicBool,
@@ -46,7 +46,6 @@ struct Status {
     steam_path: Option<String>,
     steam_running: bool,
     steam_online: Option<bool>,
-    reconnect_error: Option<String>,
     target_path: Option<String>,
     blocked: bool,
     elevated: bool,
@@ -54,12 +53,7 @@ struct Status {
 
 fn status(state: &AppState) -> Result<Status, String> {
     let (path, running) = inspect_steam(state)?;
-    let network = state
-        .network
-        .lock()
-        .map_err(|_| "Network state unavailable")?;
-    let blocked = network.is_some();
-    drop(network);
+    let blocked = state.pause.lock().map_err(|_| "Pause state unavailable")?.is_some();
     let online =
         steam_connection::observed_online(path.as_deref().map(Path::new), running, blocked);
     Ok(Status {
@@ -67,11 +61,6 @@ fn status(state: &AppState) -> Result<Status, String> {
         target_path: path,
         steam_running: running,
         steam_online: online,
-        reconnect_error: state
-            .reconnect_error
-            .lock()
-            .map_err(|_| "Reconnect state unavailable")?
-            .clone(),
         blocked,
         elevated: state.elevated,
     })
@@ -152,7 +141,6 @@ async fn install_github_update(app: tauri::AppHandle) -> Result<(), String> {
     let _reset = Reset(&state.updating);
     if state.privacy_changing.load(Ordering::SeqCst)
         || state.restarting.load(Ordering::SeqCst)
-        || state.reconnect_assisting.load(Ordering::SeqCst)
     {
         return Err("Wait for the current Steam action to finish before updating.".into());
     }
@@ -176,12 +164,9 @@ fn update_path(kind: &str, path: &Path, state: &AppState) -> Result<Status, Stri
     if state.restarting.load(Ordering::SeqCst) {
         return Err("Wait for Steam to finish restarting.".into());
     }
-    let network = state
-        .network
-        .lock()
-        .map_err(|_| "Network state unavailable")?;
-    if network.is_some() {
-        return Err("Restore network access before changing the Steam location.".into());
+    let pause = state.pause.lock().map_err(|_| "Pause state unavailable")?;
+    if pause.is_some() {
+        return Err("Bring Steam back online before changing the Steam location.".into());
     }
     let path = steam::validate_path(path)?;
     let preferences = Preferences {
@@ -194,119 +179,35 @@ fn update_path(kind: &str, path: &Path, state: &AppState) -> Result<Status, Stri
         .preferences
         .lock()
         .map_err(|_| "Settings unavailable")? = preferences;
-    drop(network);
-    state.network_revision.fetch_add(1, Ordering::SeqCst);
+    drop(pause);
     status(state)
 }
 
 #[tauri::command]
 async fn set_blocked(blocked: bool, app: tauri::AppHandle) -> Result<Status, String> {
-    run_blocking(move || update_blocked(blocked, &app.state::<AppState>(), app.clone())).await
+    run_blocking(move || update_blocked(blocked, &app.state::<AppState>())).await
 }
 
-fn update_blocked(
-    blocked: bool,
-    state: &AppState,
-    app: tauri::AppHandle,
-) -> Result<Status, String> {
+fn update_blocked(blocked: bool, state: &AppState) -> Result<Status, String> {
     if state.privacy_changing.load(Ordering::SeqCst) {
         return Err("Wait for the Spacewar privacy check to finish.".into());
     }
-    let mut network = state
-        .network
-        .lock()
-        .map_err(|_| "Network state unavailable")?;
-    if blocked && network.is_none() {
-        let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
-        let path = steam::validate_path(Path::new(&path))?;
-        *network = Some(network::NetworkBlock::start(&path)?);
-        *state
-            .blocked_at
-            .lock()
-            .map_err(|_| "Network timing unavailable")? = Some(Instant::now());
-        *state
-            .reconnect_error
-            .lock()
-            .map_err(|_| "Reconnect state unavailable")? = None;
-        state.network_revision.fetch_add(1, Ordering::SeqCst);
-    } else if !blocked {
-        // Keep ownership if an explicit close fails so the UI never falsely says restored.
-        steam_controls::restore_network(&mut network)?;
-        let blocked_for = state
-            .blocked_at
-            .lock()
-            .map_err(|_| "Network timing unavailable")?
-            .take()
-            .map(|started| started.elapsed());
-        let revision = state.network_revision.fetch_add(1, Ordering::SeqCst) + 1;
-        // Dispatch before allowing another block. The URI handler is
-        // asynchronous, so Steam may process the request after this returns.
-        let steam_path = resolve_steam_path(&state).ok().flatten().map(PathBuf::from);
-        if let Some(path) = steam_path.as_deref() {
-            let _ = steam::request_online(path);
-        }
-        drop(network);
-        if blocked_for.is_some() {
-            if let Some(path) = steam_path {
-                start_reconnect_assist(app, path, revision);
-            }
-        }
-        return status(&state);
+    if state.restarting.load(Ordering::SeqCst) {
+        return Err("Wait for Steam to finish restarting.".into());
     }
-    drop(network);
-    status(&state)
-}
-
-fn start_reconnect_assist(app: tauri::AppHandle, steam_path: PathBuf, revision: u64) {
-    std::thread::spawn(move || {
-        let state = app.state::<AppState>();
-        if state.privacy_changing.load(Ordering::SeqCst)
-            || state.restarting.load(Ordering::SeqCst)
-            || state.updating.load(Ordering::SeqCst)
-            || state.network_revision.load(Ordering::SeqCst) != revision
-            || state
-                .network
-                .lock()
-                .map_or(true, |network| network.is_some())
-        {
-            return;
-        }
-        struct Reset<'a>(&'a AtomicBool);
-        impl Drop for Reset<'_> {
-            fn drop(&mut self) {
-                self.0.store(false, Ordering::SeqCst);
-            }
-        }
-        let still_current = || {
-            !state.privacy_changing.load(Ordering::SeqCst)
-                && !state.restarting.load(Ordering::SeqCst)
-                && !state.updating.load(Ordering::SeqCst)
-                && state.network_revision.load(Ordering::SeqCst) == revision
-                && state.network.lock().is_ok_and(|network| network.is_none())
-        };
-        if !still_current() {
-            return;
-        }
-        while state
-            .reconnect_assisting
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            if !still_current() {
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        let _reset = Reset(&state.reconnect_assisting);
-        let result = std::env::current_exe()
-            .map_err(|e| e.to_string())
-            .and_then(|exe| steam_reconnect::recover(&exe, &steam_path, still_current));
-        if still_current() {
-            if let Ok(mut error) = state.reconnect_error.lock() {
-                *error = result.err();
-            }
-        }
-    });
+    // Held through the Steam call so overlapping clicks run one at a time.
+    let mut pause = state.pause.lock().map_err(|_| "Pause state unavailable")?;
+    let path = resolve_steam_path(state)?.ok_or("Locate steam.exe first.")?;
+    let path = steam::validate_path(Path::new(&path))?;
+    if blocked && pause.is_none() {
+        *pause = Some(steam_offline::SteamControls::local(&path).go_offline()?);
+    } else if !blocked {
+        // Also brings back a Steam that was left offline before RBX Tools started.
+        steam_offline::SteamControls::local(&path).go_online()?;
+        *pause = None;
+    }
+    drop(pause);
+    status(state)
 }
 
 #[tauri::command]
@@ -331,9 +232,15 @@ async fn restart_steam(
         }
         let _reset = Reset(&state.restarting);
         let path = resolve_steam_path(&state)?.ok_or("Locate steam.exe first.")?;
-        // Cancel any reconnect assist without releasing the app-owned block.
-        // Its filters apply to the executable path, including the new process.
-        state.network_revision.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut pause = state.pause.lock().map_err(|_| "Pause state unavailable")?;
+            if pause.is_some() {
+                // A paused Steam restarts in Offline Mode: a fresh session that never
+                // contacts Steam's servers, so family-shared games in use can launch.
+                steam_offline::SteamControls::local(Path::new(&path)).keep_offline_through_restart()?;
+                *pause = Some(steam_offline::Pause::OfflineMode);
+            }
+        }
         steam_controls::restart(Path::new(&path), force, || {
             let _ = progress.send("loading-ui".into());
         })
@@ -346,20 +253,12 @@ fn spacewar_preflight(state: &AppState) -> Result<(PathBuf, String), String> {
     if state.restarting.load(Ordering::SeqCst) {
         return Err("Wait for Steam to finish restarting.".into());
     }
-    if state.reconnect_assisting.load(Ordering::SeqCst) {
-        return Err("Wait for Steam's reconnect check to finish.".into());
-    }
     if state.updating.load(Ordering::SeqCst) {
         return Err("Wait for the update to finish.".into());
     }
-    let network = state
-        .network
-        .lock()
-        .map_err(|_| "Network state unavailable")?;
-    if network.is_some() {
-        return Err("Restore Steam's network access before checking game privacy.".into());
+    if state.pause.lock().map_err(|_| "Pause state unavailable")?.is_some() {
+        return Err("Bring Steam back online before checking game privacy.".into());
     }
-    drop(network);
     let (path, running) = inspect_steam(state)?;
     if !running {
         return Err("Open Steam and sign in before checking Spacewar privacy.".into());
@@ -409,10 +308,6 @@ pub fn run_update_helper() -> Option<i32> {
     github_update::run_helper_from_args()
 }
 
-pub fn run_reconnect_helper() -> Option<i32> {
-    steam_reconnect::run_helper_from_args()
-}
-
 pub fn run_status_helper() -> Option<i32> {
     steam_connection::run_helper_from_args()
 }
@@ -447,11 +342,7 @@ pub fn run() {
             }
             app.manage(AppState {
                 preferences: Mutex::new(preferences),
-                network: Mutex::new(None),
-                blocked_at: Mutex::new(None),
-                network_revision: AtomicU64::new(0),
-                reconnect_assisting: AtomicBool::new(false),
-                reconnect_error: Mutex::new(None),
+                pause: Mutex::new(None),
                 status_checking: AtomicBool::new(false),
                 restarting: AtomicBool::new(false),
                 privacy_changing: AtomicBool::new(false),
@@ -473,26 +364,11 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");
-    app.run(|app, event| {
+    app.run(|_app, event| {
         if matches!(event, tauri::RunEvent::Ready) {
             github_update::complete_startup();
         }
-        if matches!(event, tauri::RunEvent::Exit) {
-            if let Some(state) = app.try_state::<AppState>() {
-                state.network_revision.fetch_add(1, Ordering::SeqCst);
-                if let Ok(mut network) = state.network.lock() {
-                    // Do not ask Steam to reconnect while an explicitly
-                    // owned WFP session could still be blocking it.
-                    let restored = steam_controls::restore_network(&mut network).is_ok();
-                    if restored {
-                        if let Some(path) = steam::detect() {
-                            // The shell helper initializes an STA; Tauri's event
-                            // thread may already have a different COM apartment.
-                            let _ = std::thread::spawn(move || steam::request_online(&path)).join();
-                        }
-                    }
-                }
-            }
-        }
+        // Steam stays offline after exit on purpose: reconnecting could end a
+        // family-shared game session. Reopen RBX Tools to bring it back online.
     });
 }

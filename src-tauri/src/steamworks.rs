@@ -210,6 +210,10 @@ impl Client {
         }
     }
 
+    pub unsafe fn run_callbacks_now(&self) {
+        (self.run_callbacks)();
+    }
+
     pub fn wait_until_logged_on(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
