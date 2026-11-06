@@ -20,6 +20,7 @@ import appIcon from "../assets/app-logo.png";
 import tauriConfig from "../src-tauri/tauri.conf.json";
 import { createConnectionGrace, mergeStatus, mergeRestartResult, mergeNetworkResult, startStatusPolling } from "./statusPolling";
 import { canStartAction } from "./actionConcurrency";
+import { markOnce } from "./timings";
 import { connectionLabel } from "./steamStatus";
 import { isUiTestActive, setUiTestActive, testSteamStates, testSteamStatus, testUpdateVersion, type TestSteamState } from "./uiTestView";
 import {
@@ -118,6 +119,8 @@ export default function App() {
       : status.steamOnline ? "online" : "offline");
   }, [testView, status, busyActions.length]);
 
+  useEffect(() => markOnce("app.mounted"), []);
+
   useEffect(() => () => {
     if (restartTimer.current !== null) window.clearTimeout(restartTimer.current);
   }, []);
@@ -215,6 +218,7 @@ export default function App() {
       generation: () => statusGeneration.current,
       onStatus(next) {
         statusReady.current = true;
+        markOnce("app.status.ready");
         const expired = grace.observe(next);
         setStatus((current) => mergeStatus(current, next, expired));
         setLoading(false);

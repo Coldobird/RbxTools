@@ -7,6 +7,10 @@ import "./pocket-theme.css";
 import "./ui-test-view.css";
 import "./typography.css";
 import "./alignment.css";
+import { markOnce, startTimingLog } from "./timings";
+
+startTimingLog();
+markOnce("js.start");
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

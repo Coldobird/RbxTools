@@ -1,6 +1,12 @@
-import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke as rawInvoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { timedCommand } from "./timings";
 import { isUiTestActive, requireLiveUi } from "./uiTestView";
+
+function invoke<T>(...call: Parameters<typeof rawInvoke>): Promise<T> {
+  const command = call[0];
+  return timedCommand(command, () => rawInvoke<T>(...call), command === "get_status");
+}
 
 export interface Status {
   steamPath: string | null;

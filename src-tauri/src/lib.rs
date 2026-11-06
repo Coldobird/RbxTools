@@ -11,6 +11,7 @@ mod steam_offline;
 mod steam_reconnect;
 #[allow(dead_code)]
 mod steamworks;
+mod timings;
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -317,6 +318,8 @@ pub fn run_spacewar_privacy_helper() -> Option<i32> {
 }
 
 pub fn run() {
+    timings::process_start_ms();
+    timings::mark("app.run");
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
@@ -325,7 +328,17 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .on_page_load(|_, payload| {
+            timings::mark(match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "webview.load.started",
+                tauri::webview::PageLoadEvent::Finished => "webview.load.finished",
+            });
+        })
         .setup(|app| {
+            timings::mark("app.setup.start");
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                timings::init(log_dir);
+            }
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
             let config_file = config_dir.join("settings.json");
@@ -350,6 +363,7 @@ pub fn run() {
                 elevated: steam::is_elevated(),
                 config_file,
             });
+            timings::mark("app.setup.end");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -360,15 +374,21 @@ pub fn run() {
             set_blocked,
             restart_steam,
             get_spacewar_privacy,
-            set_spacewar_privacy
+            set_spacewar_privacy,
+            timings::log_timing
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start RBX Tools");
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Ready) {
+            timings::mark("app.ready");
             github_update::complete_startup();
         }
+        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            timings::mark("app.exit.requested");
+        }
         if matches!(event, tauri::RunEvent::Exit) {
+            timings::mark("app.exit");
             // Closing RBX Tools hands Steam back in its normal online state.
             let state = app.state::<AppState>();
             let was_paused = state.pause.lock().ok().and_then(|mut pause| pause.take());
