@@ -1,21 +1,17 @@
-//! Read-only live check of the production UI-readiness detector.
+//! Read-only live check of the UI-readiness detector used after a restart.
 //! Run while Steam is starting or already open; never launches or closes Steam.
-#[allow(dead_code)]
-mod production {
-    include!("../src/steam.rs");
-
-    pub fn observe(path: &std::path::Path) -> Result<(), String> {
-        wait_for_ui(path, &[])
-    }
-}
+//! Usage: steam_ui_ready_check <steam.exe>
+use rbx_tools_lib::diagnostics::{SteamExecutable, SteamUi};
+use std::{path::Path, time::Instant};
 
 fn main() {
     let Some(path) = std::env::args_os().nth(1) else {
         eprintln!("Usage: steam_ui_ready_check <steam.exe>");
         std::process::exit(2);
     };
-    let started = std::time::Instant::now();
-    let result = production::observe(std::path::Path::new(&path));
+    let started = Instant::now();
+    let result = SteamExecutable::new(Path::new(&path))
+        .and_then(|steam| SteamUi::of(&steam).wait_until_ready(&[]));
     println!(
         "{}",
         serde_json::json!({

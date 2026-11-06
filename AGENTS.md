@@ -16,13 +16,13 @@
 # Visual direction
 
 - Keep all new images, logos, and interface icons in the established GBA pixel-art style: square pixels, crisp edges, stepped curves, and the app's burgundy, red, and peach palette.
-- Reuse the shared pixel icon set in `src/PixelIcons.tsx` for interface controls and statuses. Avoid mixing in smooth outline icons or photographic assets.
+- Reuse the shared pixel icon set in `src/ui/components/PixelIcons.tsx` for interface controls and statuses. Avoid mixing in smooth outline icons or photographic assets.
 
 # UI test view
 
 - Activate or exit the installed app's UI test view with **Ctrl+Shift+T**. In a browser preview, append **`?ui-test=1`** to the app URL (for example `http://127.0.0.1:1420/?ui-test=1`).
 - Use this view for future UI checks. Its controls preview both pages, all Steam states, success/error/update toasts and stacks, Settings/startup-update/force-restart modals, busy states, and update errors. Hide controls for unobstructed screenshots.
-- The view uses the actual app components with simulated actions; Steam, network, privacy, file dialogs, and installation commands are disabled. Toasts remain visible for inspection. Exit returns to normal operation; reopening a URL with `?ui-test=1` reactivates test mode.
+- The view uses the actual app components with simulated actions; Steam, network, file dialogs, and installation commands are disabled. Toasts remain visible for inspection. Exit returns to normal operation; reopening a URL with `?ui-test=1` reactivates test mode.
 
 # UI alignment checks
 

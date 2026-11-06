@@ -6,13 +6,10 @@ A small Windows desktop utility with a dark, red GBA-inspired interface. Built w
 
 ## Features
 
-The tool library opens **Steamy Friends** for Steam controls. **Settings** contains the automatic Spacewar privacy action:
+The tool library opens **Steamy Friends** for Steam controls:
 
-- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. A paused network stays paused through normal and forced restarts, including failed attempts; only **Restore and reconnect** or closing RBX Tools removes the block. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern, so Steam never inherits elevation even if RBX Tools is started as administrator.
-- **Stop / Restore network:** temporarily block only the detected `steam.exe`. Both inbound and outbound IPv4/IPv6 internet traffic are covered; loopback connections remain available. After restoration, a game-free observer checks actual Steam login. If offline, a short-lived Spacewar helper sends user-statistics and, if needed, lobby-list requests without restarting Steam. This runs after short and long pauses, with no fixed three-second delay. Failed or timed-out requests are shown as errors; restored network access alone never means online.
-- **Make Spacewar private:** automatically reads Steam's account privacy list, marks only AppID 480 private if needed, and reads the list again before confirming success. A separate Steam web sign-in window may appear the first time; complete sign-in and Steam Guard there using the account currently open in the Steam client. The action does not launch Spacewar. Valve's [Private Games documentation](https://help.steampowered.com/en/faqs/view/1150-C06F-4D62-4966) says this hides the game's in-game status from friends. Steam must be running and network access restored. The setting persists on your Steam account for future launches; run the button again to verify it after switching accounts or changing privacy in Steam.
-
-The privacy action uses Valve's authenticated `AccountPrivateApps` web service, as used by Steam's own interface. It requires no developer API key. Steam authentication stays in a dedicated WebView2 profile; the temporary access token stays inside Steam's web origin and is not sent to the app's native bridge, logged, or saved in app preferences. The Steam window has no application IPC capabilities, navigation is restricted to Steam's own HTTPS hosts, and wrong-account sign-ins are rejected. This service is not a documented Steamworks SDK contract; if Valve changes it, the action reports an error instead of claiming that privacy was verified.
+- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. Steam is launched with `-cef-enable-debugging` so the offline/online controls work. Paused Steam restarts in Offline Mode. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern, so Steam never inherits elevation even if RBX Tools is started as administrator.
+- **Stop network / Restore and reconnect:** switch Steam offline and back online through Steam's own client controls, without a restart or administrator rights. See [Steam offline/online switch](steam-offline-switch.md). Restored access alone never means online; the label waits for Steam to confirm login.
 
 The application runs as the current user without an administrator prompt and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
 
@@ -20,7 +17,7 @@ The application runs as the current user without an administrator prompt and aut
 
 Press **Ctrl+Shift+T** in the desktop app to enter or exit the UI test view. For a browser preview, run `scripts/build.ps1 dev` and open `http://127.0.0.1:1420/?ui-test=1`. The test controls select Tool Library or Steamy Friends, online/offline/connecting/blocked/stopped/missing Steam states, every toast (including stacked error and update), and Settings, startup update, or force-restart modals. Busy and update-error states are also available. **Hide controls** clears the controls from the preview while keeping a small toggle visible.
 
-Buttons simulate their actions in this view. No Steam, traffic, account privacy, file picker, GitHub download, or installation commands run. Toasts stay visible until dismissed. **Exit test view** restores normal operation. The activation instructions are also saved in `AGENTS.md` for future UI work.
+Buttons simulate their actions in this view. No Steam, network, file picker, GitHub download, or installation commands run. Toasts stay visible until dismissed. **Exit test view** restores normal operation. The activation instructions are also saved in `AGENTS.md` for future UI work.
 
 ### GitHub updates
 
@@ -32,13 +29,9 @@ GitHub downloads that only contain the old OneDrive updater need one manual down
 
 ### Restore on exit
 
-Network blocking uses Windows Filtering Platform (WFP) with a **dynamic session**. All four filters and their sublayer are owned by that session. Normal exit closes the session; Windows also removes the session's objects after process termination, including a crash or forced close. No persistent Windows Firewall rules are created. Existing firewall policy is preserved.
+Closing RBX Tools brings a paused Steam back online. Steam restart is a deliberate, one-time action, not something that can be undone on app exit. The application remembers its Steam path preference in its per-user configuration folder.
 
-"Restore network" means remove RBX Tools' block; it cannot override a block created by another application. Cleanup after abnormal termination follows Windows' session rundown and is not a promise of zero latency. If Steam is offline after restoration, reconnect assistance opens a short Steamworks session using Valve's test AppID 480 (Spacewar), sends a stats request and, if needed, a lobby request, then shuts the session down. It runs in a separate helper with a twelve-second deadline and cancels when Steam restarts, the path changes, traffic is blocked again, or the app closes. Spacewar may briefly appear as the running game while that session is active, and friends' displays may take longer to clear. Normal status checks never initialize a game.
-
-Steam restart is a deliberate, one-time action, not something that can be undone on app exit. The application remembers its Steam path preference in its per-user configuration folder. Steam's separate privacy browser profile retains its own sign-in cookies; the app never saves a local private-status flag as proof of the account setting.
-
-Steam status checks run in a separate, game-free helper process with a two-second deadline. A timed-out helper is terminated before another check can start. Missing responses retain the previous connection label for 30 seconds before showing **Last confirmed online/offline**; without a previous reading, the label changes from **Connecting…** to **Steam connection unavailable**. Polling pauses while hidden and starts a fresh 30-second grace period on resume. Individual frontend requests have an eight-second deadline; a busy query is retried for up to 30 seconds before reporting a pending error. Recovery also waits up to 30 seconds for the observer's query guard. Restore keeps **Restoring connection…** until Steam confirms online, reports a recovery failure, or 30 seconds pass. Blocked, running Steam shows **Steam offline**. Routine successful actions do not show toasts; failures and available-update notices remain visible.
+Steam status checks run in a separate, game-free helper process with a two-second deadline. A timed-out helper is terminated before another check can start. Missing responses retain the previous connection label for 30 seconds before showing **Last confirmed online/offline**; without a previous reading, the label changes from **Connecting…** to **Steam connection unavailable**. Polling pauses while hidden and starts a fresh 30-second grace period on resume. Individual frontend requests have an eight-second deadline; a busy query is retried for up to 30 seconds before reporting a pending error. Restore keeps **Restoring connection…** until Steam confirms online or 30 seconds pass. Blocked, running Steam shows **Steam offline**. Routine successful actions do not show toasts; failures and available-update notices remain visible.
 
 ## Development
 
@@ -50,24 +43,6 @@ npm run desktop
 ```
 
 `npm run desktop`, building and browser previews do not need elevation; the debug and release applications run as the current user.
-
-### Fifteen-minute Steam reconnect test
-
-Build the diagnostic example, then run it from an elevated PowerShell terminal with Steam open. It blocks only `steam.exe` for fifteen minutes using a dynamic WFP session, restores access, sends stats and lobby requests without a game AppID as a comparison to the app, and records the timing and online state. Closing the test process removes the block.
-
-```powershell
-cargo build --manifest-path src-tauri/Cargo.toml --example steam_reconnect_offline_smoke
-& .\src-tauri\target\debug\examples\steam_reconnect_offline_smoke.exe "C:\Program Files (x86)\Steam\steam.exe" "$env:TEMP\rbx-steam-reconnect-15min.txt"
-```
-
-To try the seven experimental calls without registering a playing game, build both examples and pass `all`. These examples use a separate no-AppID probe. The final argument is a Workshop content filter AppID (960090 is Bloons TD 6), not a SteamAPI game context. Each request runs in a separate helper process; the suite records its result, login state, and any immediate-reconnect log reason. It stops when Steam logs in.
-
-```powershell
-cargo build --manifest-path src-tauri/Cargo.toml --example steam_reconnect_candidate --example steam_reconnect_offline_smoke
-& .\src-tauri\target\debug\examples\steam_reconnect_offline_smoke.exe "C:\Program Files (x86)\Steam\steam.exe" "$env:TEMP\rbx-steam-all-15min.txt" all 900 960090
-```
-
-`all-blocked 300 960090` sends every candidate while Steam is confirmed offline but still blocked, then restores traffic. This distinguishes accepted requests from calls that actually schedule an immediate reconnect. Both modes remove the dynamic network block on exit.
 
 For a browser-only interface preview:
 
@@ -131,38 +106,37 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 The native updater tests cover version and asset selection, corrupt downloads, rollback, and a Windows process test that replaces and restarts a renamed executable. To additionally check the real public GitHub download without installing or launching it:
 
 ```powershell
-cargo test --release --manifest-path src-tauri/Cargo.toml --lib github_update::tests::live_github_download_verifies_without_installing -- --ignored --nocapture
+cargo test --release --manifest-path src-tauri/Cargo.toml --lib update::release::tests::live_github_download_verifies_without_installing -- --ignored --nocapture
 ```
 
-To run the current Steam IPC privacy tests without changing account privacy:
+The automated tests check the browser/desktop boundary, Steam path handling and the offline/online controls against a fake Steam. Do not test by interrupting a user's active game or Steam session.
 
-```powershell
-cargo test --manifest-path src-tauri/Cargo.toml --lib spacewar_privacy::tests
-```
+Opt-in live checks against the running Steam client (build with `cargo build --manifest-path src-tauri/Cargo.toml --example <name>`):
 
-The former WebView2 handoff smoke example has been removed. The current tests cover privacy requests, idempotence, response parsing, and readback failures. They do not change the user's account.
-
-The automated tests check the browser/desktop boundary and Steam path handling. Native network behavior requires an elevated runtime check; compilation alone does not verify packet filtering. Do not test by interrupting a user's active game or Steam session.
-
-For an explicitly requested live restart and network cycle, build the repeatable smoke test and its AppID-free observer, then run the executable from an administrator terminal:
-
-```powershell
-cargo build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --example steam_controls_smoke --example steam_native_reconnect_probe
-& .\src-tauri\target\debug\examples\steam_controls_smoke.exe "C:\Program Files (x86)\Steam\steam.exe" "$env:TEMP\rbx-steam-controls.jsonl" 90
-```
-
-This calls the production graceful-restart and WFP implementations. It checks that Steam gets a new PID, becomes online, has four owned filters while blocked, reports offline, has no owned filters after restore, and returns online without a second restart. The block ends after observing offline (at least ten seconds) or the requested maximum, limited to two minutes. It never force-closes Steam or initializes a game. JSONL evidence includes timings and cleanup; failures also record the remaining owned-filter count. The companion `.observer.jsonl` records independent native login samples. This exercises the native implementations; it does not automate the desktop buttons or cover the five-minute reconnect-assistance branch.
+- `steam_offline_smoke <steam.exe> [cycles=3] [offline_s=20]`: cycles Steam offline and online through the production controls.
+- `steam_connection_smoke <steam.exe> <events.jsonl> <seconds>`: read-only check of the status helper's timeout.
+- `steam_ui_ready_check <steam.exe>`: read-only check of the UI-readiness detector used after a restart.
 
 ## Source map
 
-- `src/App.tsx`: dashboard, tool controls, settings, field guide, activity and feedback.
-- `src/styles.css`: responsive dark palette, pixel illustration styling, focus and motion states.
-- `src/api.ts`: narrow typed desktop bridge and read-only browser preview.
-- `src-tauri/src/steam.rs`: detection, exact-path process matching, restart, normal-user launch.
-- `src-tauri/src/spacewar_privacy.rs` and `.js`: isolated Steam sign-in, automatic account privacy request, and verification.
-- `src-tauri/src/network.rs`: transactional, session-owned WFP block and cleanup.
-- `src-tauri/src/lib.rs`: app state, settings, commands, single-instance and shutdown handling.
+Frontend (`src/`). Imports only point down: `ui` → `app` → `platform` and `testview` → `domain`. `main.tsx` is the composition root that builds every long-lived object once.
+
+- `ui/`: everything React. `App` composes the window from `layout/Sidebar`, `pages/` (Tool Library, Steamy Friends), `modals/` (Settings, update, force restart), shared `components/` (pixel icons, status icon, toasts, modal frame) and `testview/` (the UI test view panel and its hooks). Components receive view models or plain values, plus only the controller actions they use.
+- `app/`: application logic without React or browser globals. `AppController` owns the state in a `Store` and decides which actions may run; `actions/` carries them out (`LiveActions` on the desktop, `SimulatedActions` in the browser preview and UI test view). `views/` holds the view models (`SteamToolView`, `UpdateView`, `SettingsView`, `ToastView`, on a shared `StateView`). `live/` holds the live session (`StatusMonitor`, `StatusPoller`, `UpdateWatcher`, `StartupUpdate`). `testview/TestViewControls` drives the UI test view.
+- `platform/`: the outside world. `Desktop` is the interface to the backend and `DesktopBridge` its Tauri implementation and the only caller of Tauri commands, failing with a typed `DesktopError`. Also `PageVisibility` and `Timings`.
+- `testview/`: the UI test view's switch (`TestViewMode`), panel settings, simulated data (`TestViewFixtures`) and `SelectionPresets`.
+- `domain/`: plain immutable classes without display text: `SteamStatus` (a reading and its merge rules), `RunningActions` (which actions run and may start) and `ConnectionGrace`.
+- `styles/`: palette, layout, typography and pixel-alignment CSS.
+
+UI tests (`tests/ui/`) drive the app through `support/` page objects (`SteamyFriendsPage`, `TestViewPanel`), a `MockDesktop` backend, and an `InkMeter` that measures drawn pixels.
+
+Backend (`src-tauri/src/`). Every operation fails with one `Error` type (`error.rs`): a kind the interface reacts to, plus a message for the user.
+
+- `app/`: the Tauri builder and commands; `AppService` (status, network pause, restart, update) over the `SteamControl` trait, with `LocalSteam` as the real Steam; and `PreferencesStore`.
+- `steam/`: `SteamExecutable` (a validated `steam.exe`), `SteamInstallation` (finding Steam), `WindowsPath`, `SteamProcesses`, `SteamUi` (window readiness), `SteamRestarter` with an unelevated Explorer launcher, `OfflineSwitch` over Steam's `DevTools` endpoint, and `LoginChecker` with its isolated `LoginHelper` process. Only the diagnostics examples reach it from outside, through `rbx_tools_lib::diagnostics`.
+- `update/`: `UpdateCheck`, `GitHubReleases`, `ExpectedFile` verification, `Installer`, the `StagingFolder` handoff, `UpdateHelper`, and the post-update `complete_startup`.
+- `win32.rs`, `busy_flag.rs`, `poll.rs`, `timings.rs`: shared Win32 wrappers, the "already running" guard, waiting with a deadline, and the timing log.
 - `src-tauri/app.manifest`: runs as the current user (`asInvoker`), DPI awareness and Common Controls v6.
 - `scripts/build.ps1`: safe staging build for OneDrive/Documents folders protected by Windows.
 
-The landscape is stored as lossless WebP, preserving the original pixels. Dashboard artwork and fonts are bundled locally. The app has no telemetry; the optional privacy action loads Steam's official sign-in and account pages in a separate window.
+Dashboard artwork and fonts are bundled locally. The app has no telemetry.

@@ -1,52 +1,55 @@
 import { expect, test } from "@playwright/test";
+import { SteamyFriendsPage } from "./support/SteamyFriendsPage";
+import { TestViewPanel } from "./support/TestViewPanel";
 
 test("last confirmed labels give way to a confirmed Steam shutdown", async ({ page }) => {
-  await page.goto("/?ui-test=1");
-  await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-  const row = page.locator(".network-card .control-status");
+  const panel = await TestViewPanel.open(page);
+  const steam = new SteamyFriendsPage(page);
+  await panel.showPage("steamy");
   for (const state of ["online", "offline"]) {
-    await page.getByLabel("Steam state", { exact: true }).selectOption(`${state}-last-confirmed`);
-    await expect(row).toContainText(`Last confirmed ${state}`);
-    await page.getByLabel("Page", { exact: true }).selectOption("library");
+    await panel.simulateSteam(`${state}-last-confirmed`);
+    await expect(steam.networkStatus).toContainText(`Last confirmed ${state}`);
+    await panel.showPage("library");
     await expect(page.locator(".art-status")).toContainText(`Last confirmed ${state}`);
-    await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-    await page.getByLabel("Steam state", { exact: true }).selectOption("stopped");
-    await expect(row).toContainText("Steam is not running");
-    await expect(row).not.toHaveAttribute("title");
+    await panel.showPage("steamy");
+    await panel.simulateSteam("stopped");
+    await expect(steam.networkStatus).toContainText("Steam is not running");
+    await expect(steam.networkStatus).not.toHaveAttribute("title");
   }
 });
 
 test("restart reports each phase and disables only its own action until UI loads", async ({ page }) => {
   await page.clock.install();
-  await page.goto("/?ui-test=1");
-  await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-  await page.getByRole("button", { name: "Hide controls", exact: true }).click();
+  const panel = await TestViewPanel.open(page);
+  const steam = new SteamyFriendsPage(page);
+  await panel.showPage("steamy");
+  await panel.hide();
   await page.clock.pauseAt(new Date(Date.now() + 1000));
-  await page.getByRole("button", { name: "Restart Steam", exact: true }).click();
-  const status = page.locator(".control-card").first().locator(".control-status > .ui-label");
-  await expect(status).toHaveText("Restarting…");
-  await expect(page.getByRole("button", { name: "Restarting…", exact: true })).toBeDisabled();
+  await steam.button("Restart Steam").click();
+  await expect(steam.restartStatus).toHaveText("Restarting…");
+  await expect(steam.button("Restarting…")).toBeDisabled();
   await page.clock.runFor(650);
-  await expect(status).toHaveText("Loading UI…");
-  await expect(page.getByRole("button", { name: "Loading UI…", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Stop network", exact: true })).toBeEnabled();
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(steam.restartStatus).toHaveText("Loading UI…");
+  await expect(steam.button("Loading UI…")).toBeDisabled();
+  await expect(steam.button("Stop network")).toBeEnabled();
+  await expect(steam.notices).toHaveCount(0);
   await page.clock.runFor(650);
-  await expect(status).toHaveText("Loaded");
-  await expect(page.getByRole("button", { name: "Restart Steam", exact: true })).toBeEnabled();
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(steam.restartStatus).toHaveText("Loaded");
+  await expect(steam.button("Restart Steam")).toBeEnabled();
+  await expect(steam.notices).toHaveCount(0);
 });
 
 for (const first of ["restart", "network"] as const) {
   test(`start and pause overlap with ${first} first without clearing the other action`, async ({ page }) => {
     await page.clock.install();
-    await page.goto("/?ui-test=1");
-    await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-    await page.getByLabel("Steam state", { exact: true }).selectOption("stopped");
-    await page.getByRole("button", { name: "Hide controls", exact: true }).click();
+    const panel = await TestViewPanel.open(page);
+    const steam = new SteamyFriendsPage(page);
+    await panel.showPage("steamy");
+    await panel.simulateSteam("stopped");
+    await panel.hide();
     await page.clock.pauseAt(new Date(Date.now() + 1000));
-    const start = page.getByRole("button", { name: "Start Steam", exact: true });
-    const pause = page.getByRole("button", { name: "Stop network", exact: true });
+    const start = steam.button("Start Steam");
+    const pause = steam.button("Stop network");
     if (first === "restart") {
       await start.click();
       await expect(pause).toBeEnabled();
@@ -56,69 +59,69 @@ for (const first of ["restart", "network"] as const) {
       await expect(start).toBeEnabled();
       await start.click();
     }
-    await expect(page.getByRole("button", { name: "Restarting…", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Stop network", exact: true })).toBeDisabled();
+    await expect(steam.button("Restarting…")).toBeDisabled();
+    await expect(steam.button("Stop network")).toBeDisabled();
     await page.clock.runFor(650);
-    await expect(page.getByRole("button", { name: "Loading UI…", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Restore and reconnect", exact: true })).toBeEnabled();
+    await expect(steam.button("Loading UI…")).toBeDisabled();
+    await expect(steam.button("Restore and reconnect")).toBeEnabled();
     await page.clock.runFor(650);
-    await expect(page.getByRole("button", { name: "Restart Steam", exact: true })).toBeEnabled();
-    await expect(page.getByRole("heading", { name: "Network paused", exact: true })).toBeVisible();
-    await expect(page.locator(".network-card .control-status")).toContainText("Steam offline");
-    await page.getByRole("button", { name: "Show controls", exact: true }).click();
-    await expect(page.getByLabel("Steam state", { exact: true })).toHaveValue("blocked");
+    await expect(steam.button("Restart Steam")).toBeEnabled();
+    await expect(steam.networkHeading).toBeVisible();
+    await expect(steam.networkStatus).toContainText("Steam offline");
+    await panel.show();
+    await expect(panel.choice("Steam state")).toHaveValue("paused");
   });
 }
 
 test("restoring the network during UI loading does not unlock restart early", async ({ page }) => {
   await page.clock.install();
-  await page.goto("/?ui-test=1");
-  await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-  await page.getByLabel("Steam state", { exact: true }).selectOption("blocked");
-  await page.getByRole("button", { name: "Hide controls", exact: true }).click();
+  const panel = await TestViewPanel.open(page);
+  const steam = new SteamyFriendsPage(page);
+  await panel.showPage("steamy");
+  await panel.simulateSteam("paused");
+  await panel.hide();
   await page.clock.pauseAt(new Date(Date.now() + 1000));
-  await page.getByRole("button", { name: "Restart Steam", exact: true }).click();
+  await steam.button("Restart Steam").click();
   await page.clock.runFor(650);
-  await page.getByRole("button", { name: "Restore and reconnect", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Loading UI…", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Restoring and reconnecting…", exact: true })).toBeDisabled();
+  await steam.button("Restore and reconnect").click();
+  await expect(steam.button("Loading UI…")).toBeDisabled();
+  await expect(steam.button("Restoring and reconnecting…")).toBeDisabled();
   await page.clock.runFor(650);
-  await expect(page.getByRole("button", { name: "Restart Steam", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Stop network", exact: true })).toBeEnabled();
-  await expect(page.locator(".network-card .control-status")).toContainText("Steam online");
+  await expect(steam.button("Restart Steam")).toBeEnabled();
+  await expect(steam.button("Stop network")).toBeEnabled();
+  await expect(steam.networkStatus).toContainText("Steam online");
 });
 
 for (const force of [false, true]) {
   test(`network stays paused through ${force ? "forced" : "normal"} restart until restored`, async ({ page }) => {
-    await page.goto("/?ui-test=1");
-    await page.getByLabel("Page", { exact: true }).selectOption("steamy");
-    await page.getByLabel("Steam state", { exact: true }).selectOption("online");
-    await page.getByRole("button", { name: "Hide controls", exact: true }).click();
-    await page.getByRole("button", { name: "Stop network", exact: true }).click();
-    const restore = page.getByRole("button", { name: "Restore and reconnect", exact: true });
+    const panel = await TestViewPanel.open(page);
+    const steam = new SteamyFriendsPage(page);
+    await panel.showPage("steamy");
+    await panel.simulateSteam("online");
+    await panel.hide();
+    await steam.button("Stop network").click();
+    const restore = steam.button("Restore and reconnect");
     await expect(restore).toBeEnabled();
-    await expect(page.getByRole("heading", { name: "Network paused", exact: true })).toBeVisible();
+    await expect(steam.networkHeading).toBeVisible();
 
     if (force) {
-      await page.getByRole("button", { name: "Show controls", exact: true }).click();
-      await page.getByLabel("Modal", { exact: true }).selectOption("force");
-      await page.getByRole("button", { name: "Hide controls", exact: true }).click();
-      await expect(page.getByRole("dialog")).toContainText("The network will stay paused.");
-      await page.getByRole("button", { name: "Force restart", exact: true }).click();
+      await panel.briefly("Modal", "force");
+      await expect(steam.dialog).toContainText("The network will stay paused.");
+      await steam.button("Force restart").click();
     } else {
-      await page.getByRole("button", { name: "Restart Steam", exact: true }).click();
+      await steam.button("Restart Steam").click();
     }
 
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(steam.notices).toHaveCount(0);
     await expect(restore).toBeEnabled();
-    await expect(page.getByRole("heading", { name: "Network paused", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Show controls", exact: true }).click();
-    await expect(page.getByLabel("Steam state", { exact: true })).toHaveValue("blocked");
-    await page.getByRole("button", { name: "Hide controls", exact: true }).click();
+    await expect(steam.networkHeading).toBeVisible();
+    await panel.show();
+    await expect(panel.choice("Steam state")).toHaveValue("paused");
+    await panel.hide();
 
     await restore.click();
-    await expect(page.getByRole("button", { name: "Stop network", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Show controls", exact: true }).click();
-    await expect(page.getByLabel("Steam state", { exact: true })).toHaveValue("online");
+    await expect(steam.button("Stop network")).toBeEnabled();
+    await panel.show();
+    await expect(panel.choice("Steam state")).toHaveValue("online");
   });
 }

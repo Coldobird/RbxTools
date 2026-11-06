@@ -12,7 +12,7 @@ the next login waits for a refill. Reproduced: 12 rapid reconnects, then a 66 s 
 ## What the app does now
 
 Steam runs with `-cef-enable-debugging` (RBX Tools' Restart Steam adds it). RBX Tools uses the
-loopback DevTools endpoint (`127.0.0.1:8080`, `SharedJSContext`) — see `src-tauri/src/steam_offline.rs`.
+loopback DevTools endpoint (`127.0.0.1:8080`, `SharedJSContext`) — see `src-tauri/src/steam/offline.rs`.
 
 | Action | Control | Measured |
 | --- | --- | --- |
@@ -36,4 +36,4 @@ no crash, no game API stall over 340 ms. Admin rights and WFP are no longer need
 
 - The family-sharing lock itself was not reproducible here (needs another family member playing).
 - The DevTools port lets any local process control Steam while it is open.
-- Steam stays offline when RBX Tools exits, so a shared game session is not ended by accident.
+- Closing RBX Tools brings a paused Steam back online.

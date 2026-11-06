@@ -25,10 +25,9 @@ If the app asks for WebView2, [get it from Microsoft](https://developer.microsof
 The first tool in the library helps you manage Steam:
 
 - **Restart Steam** with one click.
-- **Pause and restore Steam's internet** without disconnecting other apps.
-- **Make Spacewar private** in Settings to hide its activity from friends. Steam sign-in may be needed.
+- **Take Steam offline and back online** in seconds, even while a game is running.
 
-Closing RBX Tools removes its network pause. Restarting or pausing Steam may interrupt games, downloads, and chat.
+Closing RBX Tools brings Steam back online. Restarting or pausing Steam may interrupt games, downloads, and chat.
 
 <details>
 <summary><strong>See the Tool Library and Settings</strong></summary>
@@ -41,7 +40,7 @@ Choose the tool you want to use.
 
 ### Settings
 
-Find Steam, manage Spacewar privacy, and check for updates.
+Find Steam and check for updates.
 
 <img src="docs/screenshots/settings.png" alt="RBX Tools settings" width="540">
 

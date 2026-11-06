@@ -1,6 +1,6 @@
 fn main() {
     println!("cargo:rerun-if-changed=app.manifest");
-    println!("cargo:rerun-if-changed=src/exec_in_explorer.cpp");
+    println!("cargo:rerun-if-changed=src/steam/exec_in_explorer.cpp");
     let version = std::env::var("CARGO_PKG_VERSION").expect("Cargo package version is unavailable");
     for path in ["tauri.conf.json", "../package.json"] {
         println!("cargo:rerun-if-changed={path}");
@@ -18,7 +18,7 @@ fn main() {
     {
         cc::Build::new()
             .cpp(true)
-            .file("src/exec_in_explorer.cpp")
+            .file("src/steam/exec_in_explorer.cpp")
             .compile("exec_in_explorer");
         // Tauri's native dialogs import TaskDialogIndirect from Common Controls
         // v6. GUI diagnostic examples need this dependency too, while retaining
