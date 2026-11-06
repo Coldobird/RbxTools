@@ -8,13 +8,13 @@ A small Windows desktop utility with a dark, red GBA-inspired interface. Built w
 
 The tool library opens **Steamy Friends** for Steam controls. **Settings** contains the automatic Spacewar privacy action:
 
-- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. A paused network stays paused through normal and forced restarts, including failed attempts; only **Restore and reconnect** or closing RBX Tools removes the block. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern instead of inheriting RBX Tools' administrator privileges.
+- **Restart Steam:** ask Steam to shut down, wait up to eight seconds, then relaunch. If it stays open, ask before forcing it closed. If Steam is already closed, start it. A paused network stays paused through normal and forced restarts, including failed attempts; only **Restore and reconnect** or closing RBX Tools removes the block. Steam launches through the existing Windows Explorer shell, using Microsoft's documented unelevated-launch pattern, so Steam never inherits elevation even if RBX Tools is started as administrator.
 - **Stop / Restore network:** temporarily block only the detected `steam.exe`. Both inbound and outbound IPv4/IPv6 internet traffic are covered; loopback connections remain available. After restoration, a game-free observer checks actual Steam login. If offline, a short-lived Spacewar helper sends user-statistics and, if needed, lobby-list requests without restarting Steam. This runs after short and long pauses, with no fixed three-second delay. Failed or timed-out requests are shown as errors; restored network access alone never means online.
 - **Make Spacewar private:** automatically reads Steam's account privacy list, marks only AppID 480 private if needed, and reads the list again before confirming success. A separate Steam web sign-in window may appear the first time; complete sign-in and Steam Guard there using the account currently open in the Steam client. The action does not launch Spacewar. Valve's [Private Games documentation](https://help.steampowered.com/en/faqs/view/1150-C06F-4D62-4966) says this hides the game's in-game status from friends. Steam must be running and network access restored. The setting persists on your Steam account for future launches; run the button again to verify it after switching accounts or changing privacy in Steam.
 
 The privacy action uses Valve's authenticated `AccountPrivateApps` web service, as used by Steam's own interface. It requires no developer API key. Steam authentication stays in a dedicated WebView2 profile; the temporary access token stays inside Steam's web origin and is not sent to the app's native bridge, logged, or saved in app preferences. The Steam window has no application IPC capabilities, navigation is restricted to Steam's own HTTPS hosts, and wrong-account sign-ins are rejected. This service is not a documented Steamworks SDK contract; if Valve changes it, the action reports an error instead of claiming that privacy was verified.
 
-The application requests administrator access on launch and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
+The application runs as the current user without an administrator prompt and automatically finds the exact path of a running `steam.exe` before trying its registry entries and standard install folders. It also allows manually locating `steam.exe`. A single-instance guard prevents conflicting application sessions.
 
 ### UI test view
 
@@ -49,7 +49,7 @@ npm ci
 npm run desktop
 ```
 
-Run the development terminal as administrator for `npm run desktop`: the debug application uses the same administrator manifest as the release. Building and browser previews do not need elevation. Double-clicking the finished release executable requests elevation through Windows normally.
+`npm run desktop`, building and browser previews do not need elevation; the debug and release applications run as the current user.
 
 ### Fifteen-minute Steam reconnect test
 
@@ -162,7 +162,7 @@ This calls the production graceful-restart and WFP implementations. It checks th
 - `src-tauri/src/spacewar_privacy.rs` and `.js`: isolated Steam sign-in, automatic account privacy request, and verification.
 - `src-tauri/src/network.rs`: transactional, session-owned WFP block and cleanup.
 - `src-tauri/src/lib.rs`: app state, settings, commands, single-instance and shutdown handling.
-- `src-tauri/app.manifest`: administrator request at application launch.
+- `src-tauri/app.manifest`: runs as the current user (`asInvoker`), DPI awareness and Common Controls v6.
 - `scripts/build.ps1`: safe staging build for OneDrive/Documents folders protected by Windows.
 
 The landscape is stored as lossless WebP, preserving the original pixels. Dashboard artwork and fonts are bundled locally. The app has no telemetry; the optional privacy action loads Steam's official sign-in and account pages in a separate window.

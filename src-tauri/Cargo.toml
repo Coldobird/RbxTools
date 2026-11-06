@@ -1,6 +1,6 @@
 [package]
 name = "rbx-tools"
-version = "0.2.39"
+version = "0.2.40"
 description = "A pocket-sized collection of game utilities"
 authors = ["RBX Tools"]
 edition = "2021"
@@ -13,8 +13,7 @@ crate-type = ["rlib"]
 [[bin]]
 name = "rbx-tools"
 path = "src/main.rs"
-# The Windows manifest deliberately requires elevation, so a test harness for
-# this launcher cannot run in a normal non-elevated test session.
+# The launcher only dispatches to the library, which holds the tests.
 test = false
 
 [build-dependencies]

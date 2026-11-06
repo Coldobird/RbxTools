@@ -13,7 +13,7 @@
 ## Get started
 
 1. [Download **RBX-Tools.exe**](https://github.com/Coldobird/RbxTools/releases/latest) from **Assets**.
-2. Open it and approve the administrator prompt.
+2. Open it.
 3. Pick a tool from the library.
 
 **Windows 10/11 · 64-bit · No installation needed**
